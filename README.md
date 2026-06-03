@@ -2,6 +2,8 @@
 
 **Interaktywny symulator logiki boolowskiej i algebry Boole'a** – kompletne narzędzie edukacyjne do techniki cyfrowej.
 
+**Zaprojektowała i zbudowała: Paweł K** 🛠️
+
 ## 🎯 O Projekcie
 
 Bool Kombajn to nowoczesna aplikacja webowa (PWA) do nauki i eksperymentowania z:
@@ -157,3 +159,5 @@ Znalazłeś błąd? Masz pomysł?
 ---
 
 **Bool Kombajn** – najmądrzejsza maszyna do logiki boolowskiej 🚜✨
+
+*Zaprojektowała i zbudowała: **Paweł K*** 🛠️
