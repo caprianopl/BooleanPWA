@@ -2,7 +2,7 @@
 
 **Interaktywny symulator logiki boolowskiej i algebry Boole'a** – kompletne narzędzie edukacyjne do techniki cyfrowej.
 
-**Zaprojektowała i zbudowała: Paweł K** 🛠️
+**Zaprojektował i zbudował: Paweł K** 🛠️
 
 ## 🎯 O Projekcie
 
