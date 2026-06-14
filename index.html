@@ -1,541 +1,1743 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="pl">
-<head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Bool Kombajn</title>
-  <meta name="theme-color" content="#1e40af"/>
-  <style>* {box-sizing:border-box;} body{margin:0;padding:0;background:#f1f5f9;} @media print{body{background:white;} .no-print{display:none!important;}}</style>
-  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
-</head>
-<body>
-  <div id="root"></div>
-  <script>
-const { useState, useMemo } = React;
-
-// ═══════════════════════════════════════════════
-// PARSER WYRAŻEŃ BOOLOWSKICH
-// ═══════════════════════════════════════════════
-
-function lex(expr, names) {
-  const sorted = [...names].sort((a, b) => b.length - a.length);
-  const toks = [];
-  let i = 0;
-  while (i < expr.length) {
-    if (/\s/.test(expr[i])) { i++; continue; }
-    if (expr[i] === "+") { toks.push({ t: "OR" }); i++; continue; }
-    if ("*·".includes(expr[i])) { toks.push({ t: "AND" }); i++; continue; }
-    if ("'`".includes(expr[i])) { toks.push({ t: "NP" }); i++; continue; }
-    if ("!~".includes(expr[i])) { toks.push({ t: "PP" }); i++; continue; }
-    if (expr[i] === "(") { toks.push({ t: "LP" }); i++; continue; }
-    if (expr[i] === ")") { toks.push({ t: "RP" }); i++; continue; }
-    let ok = false;
-    for (const v of sorted) {
-      if (expr.substr(i, v.length).toLowerCase() === v.toLowerCase()) {
-        toks.push({ t: "V", n: v.toLowerCase() });
-        i += v.length;
-        ok = true;
-        break;
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Bool Kombajn</title>
+    <meta name="theme-color" content="#1e40af" />
+    <style>
+      * {
+        box-sizing: border-box;
       }
-    }
-    if (!ok) i++;
-  }
-  return toks;
-}
-
-class BParser {
-  constructor(toks, map) {
-    this.toks = toks;
-    this.i = 0;
-    this.m = map;
-  }
-  p() { return this.toks[this.i]; }
-  e() { return this.toks[this.i++]; }
-  expr() {
-    let v = this.term();
-    while (this.p()?.t === "OR") {
-      this.e();
-      v |= this.term();
-    }
-    return v & 1;
-  }
-  term() {
-    let v = this.fac();
-    while (this.p()) {
-      const t = this.p().t;
-      if (t === "OR" || t === "RP") break;
-      if (t === "AND") this.e();
-      else if (t !== "V" && t !== "LP" && t !== "PP") break;
-      v &= this.fac();
-    }
-    return v & 1;
-  }
-  fac() {
-    let neg = 0;
-    while (this.p()?.t === "PP") { this.e(); neg ^= 1; }
-    let v = this.atom();
-    while (this.p()?.t === "NP") { this.e(); neg ^= 1; }
-    return neg ? v ^ 1 : v;
-  }
-  atom() {
-    const t = this.p();
-    if (!t) return 0;
-    if (t.t === "LP") {
-      this.e();
-      const v = this.expr();
-      if (this.p()?.t === "RP") this.e();
-      return v;
-    }
-    if (t.t === "V") { this.e(); return this.m[t.n] ?? 0; }
-    return 0;
-  }
-}
-
-function evalExpr(expr, vals, names) {
-  try {
-    const toks = lex(expr, names);
-    const map = Object.fromEntries(names.map((n, i) => [n.toLowerCase(), vals[i]]));
-    return new BParser(toks, map).expr();
-  } catch {
-    return 0;
-  }
-}
-
-// ═══════════════════════════════════════════════
-// ALGORYTM QUINE'A-McCLUSKEYA
-// ═══════════════════════════════════════════════
-
-const d2b = (n, bits) => n.toString(2).padStart(bits, "0");
-
-function merge(a, b) {
-  let d = 0, p = -1;
-  for (let i = 0; i < a.length; i++) {
-    if (a[i] === "-" && b[i] === "-") continue;
-    if (a[i] === "-" || b[i] === "-") return null;
-    if (a[i] !== b[i]) {
-      if (++d > 1) return null;
-      p = i;
-    }
-  }
-  return d === 1 ? a.slice(0, p) + "-" + a.slice(p + 1) : null;
-}
-
-function runQMC(mts, dcs, n) {
-  if (!mts.length) return { pis: [], steps: [] };
-  const all = [...new Set([...mts, ...dcs])];
-  let tm = Object.fromEntries(all.map(m => [d2b(m, n), mts.includes(m) ? [m] : []]));
-  let cur = Object.keys(tm);
-  const pis = [], steps = [];
-  for (let it = 0; it < 20; it++) {
-    const grp = {};
-    cur.forEach(t => {
-      const k = [...t].filter(c => c === "1").length;
-      (grp[k] = grp[k] || []).push(t);
-    });
-    steps.push({ it, grp: JSON.parse(JSON.stringify(grp)) });
-    const used = new Set(), ntm = {};
-    let any = false;
-    const ks = Object.keys(grp).map(Number).sort((a, b) => a - b);
-    for (let i = 0; i < ks.length - 1; i++) {
-      for (const t1 of grp[ks[i]]) for (const t2 of grp[ks[i + 1]]) {
-        const c = merge(t1, t2);
-        if (c !== null) {
-          used.add(t1); used.add(t2);
-          any = true;
-          if (!ntm[c]) ntm[c] = [];
-          [...(tm[t1] || []), ...(tm[t2] || [])].forEach(m => {
-            if (!ntm[c].includes(m)) ntm[c].push(m);
-          });
+      body {
+        margin: 0;
+        padding: 0;
+        background: #f1f5f9;
+      }
+      @media print {
+        body {
+          background: white;
+        }
+        .no-print {
+          display: none !important;
         }
       }
-    }
-    cur.forEach(t => {
-      if (!used.has(t) && !pis.find(p => p.term === t)) pis.push({
-        term: t,
-        mts: (tm[t] || []).filter(m => mts.includes(m))
-      });
-    });
-    if (!any) break;
-    Object.assign(tm, ntm);
-    cur = Object.keys(ntm);
-  }
-  return { pis, steps };
-}
+    </style>
+    <script
+      src="https://unpkg.com/react@18/umd/react.production.min.js"
+      crossorigin
+    ></script>
+    <script
+      src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"
+      crossorigin
+    ></script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      const { useState, useMemo } = React;
 
-function findCover(pis, mts) {
-  if (!mts.length) return [];
-  const cov = Object.fromEntries(mts.map(m => [m, []]));
-  pis.forEach((pi, i) => pi.mts.forEach(m => { if (cov[m]) cov[m].push(i); }));
-  const sel = new Set(), done = new Set();
-  Object.entries(cov).forEach(([, arr]) => {
-    if (arr.length === 1) { sel.add(arr[0]); pis[arr[0]].mts.forEach(x => done.add(x)); }
-  });
-  const rem = new Set(mts.filter(m => !done.has(m)));
-  while (rem.size) {
-    let best = -1, bn = 0;
-    pis.forEach((pi, i) => {
-      if (!sel.has(i)) {
-        const n = pi.mts.filter(m => rem.has(m)).length;
-        if (n > bn) { bn = n; best = i; }
+      // ═══════════════════════════════════════════════
+      // PARSER WYRAŻEŃ BOOLOWSKICH
+      // ═══════════════════════════════════════════════
+
+      function lex(expr, names) {
+        const sorted = [...names].sort((a, b) => b.length - a.length);
+        const toks = [];
+        let i = 0;
+        while (i < expr.length) {
+          if (/\s/.test(expr[i])) {
+            i++;
+            continue;
+          }
+          if (expr[i] === "+") {
+            toks.push({ t: "OR" });
+            i++;
+            continue;
+          }
+          if ("*·".includes(expr[i])) {
+            toks.push({ t: "AND" });
+            i++;
+            continue;
+          }
+          if ("'`".includes(expr[i])) {
+            toks.push({ t: "NP" });
+            i++;
+            continue;
+          }
+          if ("!~".includes(expr[i])) {
+            toks.push({ t: "PP" });
+            i++;
+            continue;
+          }
+          if (expr[i] === "(") {
+            toks.push({ t: "LP" });
+            i++;
+            continue;
+          }
+          if (expr[i] === ")") {
+            toks.push({ t: "RP" });
+            i++;
+            continue;
+          }
+          let ok = false;
+          for (const v of sorted) {
+            if (expr.substr(i, v.length).toLowerCase() === v.toLowerCase()) {
+              toks.push({ t: "V", n: v.toLowerCase() });
+              i += v.length;
+              ok = true;
+              break;
+            }
+          }
+          if (!ok) i++;
+        }
+        return toks;
       }
-    });
-    if (best === -1 || !bn) break;
-    sel.add(best);
-    pis[best].mts.forEach(m => rem.delete(m));
-  }
-  return [...sel].map(i => pis[i]);
-}
 
-// ═══════════════════════════════════════════════
-// FORMATOWANIE WYRAŻEŃ
-// ═══════════════════════════════════════════════
-
-const fmtSOP = (term, vs) => [...term].map((c, i) => c === "1" ? vs[i] : c === "0" ? vs[i] + "'" : "").join("") || "1";
-const fmtPOS = (term, vs) => {
-  const ts = [...term].map((c, i) => c === "0" ? vs[i] : c === "1" ? vs[i] + "'" : "").filter(Boolean);
-  return ts.length ? "(" + ts.join("+") + ")" : "0";
-};
-const fmtMT = (m, n, vs) => d2b(m, n).split("").map((b, i) => b === "1" ? vs[i] : vs[i] + "'").join("");
-const fmtMX = (m, n, vs) => "(" + d2b(m, n).split("").map((b, i) => b === "0" ? vs[i] : vs[i] + "'").join("+") + ")";
-
-// ═══════════════════════════════════════════════
-// MAPA KARNAUGH
-// ═══════════════════════════════════════════════
-
-const G4 = [0, 1, 3, 2];
-const G8 = [0, 1, 3, 2, 6, 7, 5, 4];
-function kCells(n) {
-  if (n === 2) return [[0, 1], [2, 3]].map((row, ri) => row.map((m, ci) => ({ ri, ci, m })));
-  if (n === 3) return Array.from({ length: 2 }, (_, ri) => G4.map((g, ci) => ({ ri, ci, m: ri * 4 + g })));
-  if (n === 4) return Array.from({ length: 4 }, (_, ri) => G4.map((g, ci) => ({ ri, ci, m: G4[ri] * 4 + G4[ci] })));
-  if (n === 5) return Array.from({ length: 4 }, (_, ri) => G8.map((g, ci) => ({ ri, ci, m: G4[ri] * 8 + G8[ci] })));
-  return Array.from({ length: 8 }, (_, ri) => G8.map((g, ci) => ({ ri, ci, m: G8[ri] * 8 + G8[ci] })));
-}
-function piCoverage(term, n) {
-  const cells = [];
-  for (let m = 0; m < 1 << n; m++) {
-    if ([...d2b(m, n)].every((b, i) => term[i] === "-" || term[i] === b)) cells.push(m);
-  }
-  return cells;
-}
-
-const GRP_CLR = ["#e74c3c", "#27ae60", "#2980b9", "#d97706", "#7c3aed", "#0891b2", "#db2777", "#059669"];
-const GRP_BG = ["#fde8e8", "#e8fdf0", "#dbeafe", "#fef3c7", "#f5f3ff", "#ecfeff", "#fce7f3", "#d1fae5"];
-
-function KMap({ n, vs, outs, cover, onCellClick }) {
-  const cells = useMemo(() => kCells(n), [n]);
-  const colorMap = useMemo(() => {
-    const m = {};
-    cover.forEach((pi, i) => piCoverage(pi.term, n).forEach(cell => { (m[cell] = m[cell] || []).push(i); }));
-    return m;
-  }, [cover, n]);
-  const rLbls = n <= 3 ? ["0", "1"] : n <= 5 ? ["00", "01", "11", "10"] : ["000", "001", "011", "010", "110", "111", "101", "100"];
-  const cLbls = n === 2 ? ["0", "1"] : n <= 4 ? ["00", "01", "11", "10"] : ["000", "001", "011", "010", "110", "111", "101", "100"];
-  const rVar = n === 2 ? vs[0] : n === 3 ? vs[0] : n <= 5 ? `${vs[0]}${vs[1]}` : `${vs[0]}${vs[1]}${vs[2]}`;
-  const cVar = n === 2 ? vs[1] : n === 3 ? `${vs[1]}${vs[2]}` : n === 4 ? `${vs[2]}${vs[3]}` : n === 5 ? `${vs[2]}${vs[3]}${vs[4]}` : `${vs[3]}${vs[4]}${vs[5]}`;
-  return /*#__PURE__*/React.createElement("div", { style: { overflowX: "auto" } }, /*#__PURE__*/React.createElement("table", { style: { borderCollapse: "collapse", margin: "8px auto", fontFamily: "monospace" } }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", { style: { padding: "4px 12px", color: "#94a3b8", fontSize: 12, textAlign: "center" } }, /*#__PURE__*/React.createElement("em", null, rVar), " \\ ", /*#__PURE__*/React.createElement("em", null, cVar)), cLbls.map(l => /*#__PURE__*/React.createElement("th", { key: l, style: { padding: "4px 16px", textAlign: "center", fontSize: 13, fontWeight: 600, color: "#334155" } }, l)))), /*#__PURE__*/React.createElement("tbody", null, cells.map((row, ri) => /*#__PURE__*/React.createElement("tr", { key: ri }, /*#__PURE__*/React.createElement("td", { style: { padding: "4px 16px", fontWeight: 600, fontSize: 13, color: "#334155", textAlign: "center" } }, rLbls[ri]), row.map(({ m }) => {
-    const idxs = colorMap[m] || [];
-    const val = outs[m];
-    const bg = idxs.length ? GRP_BG[idxs[0] % GRP_BG.length] : val === 1 ? "#f0fdf4" : val === "x" ? "#faf5ff" : "#fff5f5";
-    const bd = idxs.length ? `2.5px solid ${GRP_CLR[idxs[0] % GRP_CLR.length]}` : "1.5px solid #cbd5e1";
-    return /*#__PURE__*/React.createElement("td", { key: m, onClick: () => onCellClick && onCellClick(m), style: { width: 60, height: 60, textAlign: "center", verticalAlign: "middle", background: bg, border: bd, position: "relative", cursor: onCellClick ? "pointer" : "default" } }, /*#__PURE__*/React.createElement("span", { style: { position: "absolute", top: 2, left: 4, fontSize: 9, color: "#94a3b8" } }, m), /*#__PURE__*/React.createElement("span", { style: { fontSize: 20, fontWeight: 700, color: val === 1 ? "#15803d" : val === "x" ? "#7c3aed" : "#b91c1c" } }, String(val)));
-  }))))));
-}
-
-// ═══════════════════════════════════════════════
-// KOMPONENT: SCHEMAT BRAMKOWY SVG
-// ═══════════════════════════════════════════════
-
-function Gates({ cover, vs, type, structType }) {
-  if (!cover.length) return /*#__PURE__*/React.createElement("div", { style: { padding: 24, color: "#94a3b8", textAlign: "center", fontSize: 14 } }, "Wprowadź dane, aby wygenerować schemat.");
-  
-  const isPOS = structType === "pos";
-
-  const terms = cover.map(pi => {
-    const lits = [...pi.term].map((c, i) => {
-      if (c === "-") return null;
-      return isPOS ? { v: vs[i], vi: i, neg: c === "1" } : { v: vs[i], vi: i, neg: c === "0" };
-    }).filter(Boolean);
-    return { lits, outLabel: isPOS ? fmtPOS(pi.term, vs) : fmtSOP(pi.term, vs) };
-  });
-
-  const needsInv = new Set();
-  terms.forEach(t => t.lits.forEach(l => { if (l.neg) needsInv.add(l.vi); }));
-
-  const GW = 68, GH = 38;
-  const INV_W = 34, INV_H = 24;
-  const dotR = 6;
-
-  const X_LBL = 18;
-  const X_INV = 60;
-  const X1 = X_INV + INV_W + 90;
-  const X2 = X1 + GW + 140;
-  const NV = vs.length;
-  const NR = terms.length;
-
-  const VAR_SPACING = Math.max(44, Math.min(60, 320 / Math.max(NV, 1)));
-  const VGAP = Math.max(68, Math.min(90, 380 / Math.max(NR, 1)));
-
-  const varY = Array.from({ length: NV }, (_, i) => 30 + i * VAR_SPACING);
-  const rowY = terms.map((_, i) => 30 + i * VGAP);
-  const SVG_H = Math.max(NV * VAR_SPACING + 60, NR * VGAP + 60, 200);
-  const outY = SVG_H / 2 - GH / 2;
-
-  let n1 = "AND", n2 = "OR";
-  let hasDotFirst = false, hasDotSecond = false;
-
-  if (type === "nand") {
-    if (isPOS) { n1 = "NAND"; n2 = "AND"; hasDotFirst = true; hasDotSecond = false; } 
-    else { n1 = "NAND"; n2 = "NAND"; hasDotFirst = true; hasDotSecond = true; }
-  } else if (type === "nor") {
-    if (isPOS) { n1 = "NOR"; n2 = "NOR"; hasDotFirst = true; hasDotSecond = true; } 
-    else { n1 = "NOR"; n2 = "OR"; hasDotFirst = true; hasDotSecond = false; }
-  } else {
-    if (isPOS) { n1 = "OR"; n2 = "AND"; } 
-    else { n1 = "AND"; n2 = "OR"; }
-  }
-
-  const els = [];
-  let uid = 0;
-  const k = () => uid++;
-
-  vs.forEach((v, i) => {
-    const cy = varY[i] + INV_H / 2;
-    els.push(/*#__PURE__*/React.createElement("text", { key: k(), x: X_LBL, y: cy + 5, fontSize: 14, fontFamily: "Georgia, serif", fontWeight: "700", fill: "#1e293b" }, v));
-    if (needsInv.has(i)) {
-      els.push(/*#__PURE__*/React.createElement("line", { key: k(), x1: X_LBL + 16, y1: cy, x2: X_INV, y2: cy, stroke: "#475569", strokeWidth: 1.5 }));
-      const invLabel = (type === "nand" || type === "nor") ? type.toUpperCase() : "NOT";
-      els.push(/*#__PURE__*/React.createElement("rect", { key: k(), x: X_INV, y: varY[i], width: INV_W, height: INV_H, rx: 4, fill: "#fce7f3", stroke: "#db2777", strokeWidth: 1.5 }));
-      els.push(/*#__PURE__*/React.createElement("text", { key: k(), x: X_INV + INV_W / 2, y: varY[i] + INV_H / 2 + 3, textAnchor: "middle", fontSize: 8, fontWeight: "700", fill: "#9d174d" }, invLabel));
-      els.push(/*#__PURE__*/React.createElement("circle", { key: k(), cx: X_INV + INV_W + 5, cy: cy, r: 5, fill: "white", stroke: "#db2777", strokeWidth: 1.5 }));
-      els.push(/*#__PURE__*/React.createElement("text", { key: k(), x: X_INV + INV_W + 14, y: cy - 5, fontSize: 11, fontFamily: "Georgia, serif", fill: "#9d174d" }, v, "'"));
-    } else {
-      els.push(/*#__PURE__*/React.createElement("line", { key: k(), x1: X_LBL + 16, y1: cy, x2: X_INV + INV_W + 14, y2: cy, stroke: "#475569", strokeWidth: 1.5, strokeDasharray: "4 2" }));
-    }
-  });
-
-  terms.forEach((term, ti) => {
-    const gx = X1, gy = rowY[ti];
-    const nin = Math.max(term.lits.length, 1);
-    const centerY = gy + GH / 2;
-
-    els.push(/*#__PURE__*/React.createElement("rect", { key: k(), x: gx, y: gy, width: GW, height: GH, rx: 6, fill: "#dbeafe", stroke: "#3b82f6", strokeWidth: 2 }));
-    els.push(/*#__PURE__*/React.createElement("text", { key: k(), x: gx + GW / 2, y: gy + GH / 2 + 5, textAnchor: "middle", fontSize: 11, fontWeight: "700", fill: "#1e40af" }, n1));
-    if (hasDotFirst) els.push(/*#__PURE__*/React.createElement("circle", { key: k(), cx: gx + GW + dotR, cy: centerY, r: dotR, fill: "white", stroke: "#3b82f6", strokeWidth: 2 }));
-
-    term.lits.forEach((lit, li) => {
-      const wy = gy + GH * (li + 1) / (nin + 1);
-      const lbl = lit.neg ? lit.v + "'" : lit.v;
-      els.push(/*#__PURE__*/React.createElement("line", { key: k(), x1: gx - 45, y1: wy, x2: gx, y2: wy, stroke: lit.neg ? "#db2777" : "#475569", strokeWidth: 1.5 }));
-      els.push(/*#__PURE__*/React.createElement("circle", { key: k(), cx: gx - 45, y: wy, r: 2.5, fill: lit.neg ? "#db2777" : "#475569" }));
-      els.push(/*#__PURE__*/React.createElement("text", { key: k(), x: gx - 50, y: wy + 4.5, textAnchor: "end", fontSize: 13, fontFamily: "Georgia, serif", fill: lit.neg ? "#9d174d" : "#1e293b" }, lbl));
-    });
-
-    const outX = hasDotFirst ? gx + GW + dotR * 2 + 2 : gx + GW;
-    els.push(/*#__PURE__*/React.createElement("text", { key: k(), x: outX + 3, y: gy - 4, fontSize: 9, fill: "#94a3b8", fontFamily: "monospace" }, term.outLabel));
-
-    const inY = outY + GH * (ti + 1) / (NR + 1);
-    const midX = outX + (X2 - outX) * 0.5;
-    els.push(/*#__PURE__*/React.createElement("path", { key: k(), d: `M${outX},${centerY} H${midX} V${inY} H${X2}`, stroke: "#64748b", strokeWidth: 1.5, fill: "none" }));
-    els.push(/*#__PURE__*/React.createElement("circle", { key: k(), cx: X2, cy: inY, r: 2.5, fill: "#64748b" }));
-  });
-
-  const g2y = outY;
-  els.push(/*#__PURE__*/React.createElement("rect", { key: k(), x: X2, y: g2y, width: GW, height: GH, rx: 6, fill: "#fef3c7", stroke: "#d97706", strokeWidth: 2 }));
-  els.push(/*#__PURE__*/React.createElement("text", { key: k(), x: X2 + GW / 2, y: g2y + GH / 2 + 5, textAnchor: "middle", fontSize: 11, fontWeight: "700", fill: "#92400e" }, n2));
-  if (hasDotSecond) els.push(/*#__PURE__*/React.createElement("circle", { key: k(), cx: X2 + GW + dotR, cy: g2y + GH / 2, r: dotR, fill: "white", stroke: "#d97706", strokeWidth: 2 }));
-
-  const fX = hasDotSecond ? X2 + GW + dotR * 2 + 3 : X2 + GW + 3;
-  const fY = g2y + GH / 2;
-  els.push(/*#__PURE__*/React.createElement("line", { key: k(), x1: fX, y1: fY, x2: fX + 50, y2: fY, stroke: "#15803d", strokeWidth: 2.5 }));
-  els.push(/*#__PURE__*/React.createElement("circle", { key: k(), cx: fX + 50, cy: fY, r: 3, fill: "#15803d" }));
-  els.push(/*#__PURE__*/React.createElement("text", { key: k(), x: fX + 56, y: fY + 6, fontSize: 17, fontFamily: "Georgia, serif", fontWeight: "700", fill: "#15803d" }, "f"));
-
-  const svgW = fX + 80;
-  return /*#__PURE__*/React.createElement("div", { style: { overflowX: "auto" } }, /*#__PURE__*/React.createElement("svg", { width: svgW, height: SVG_H, style: { minWidth: svgW, display: "block" } }, els));
-}
-
-// ═══════════════════════════════════════════════
-// GŁÓWNY KOMPONENT
-// ═══════════════════════════════════════════════
-
-function App() {
-  const [nv, setNv] = useState(3);
-  const [names, setNames] = useState(["A", "B", "C", "D", "E", "F"]);
-  const [mode, setMode] = useState("km");
-  const [expr, setExpr] = useState("");
-  const [ttIn, setTtIn] = useState({});
-  const [kmIn, setKmIn] = useState({});
-  const [mtStr, setMtStr] = useState("");
-  const [mxStr, setMxStr] = useState("");
-  const [dcStr, setDcStr] = useState("");
-  const [tab, setTab] = useState("tt");
-  
-  const [gtype, setGtype] = useState("and-or");
-  const [optimizeTarget, setOptimizeTarget] = useState("1"); // "1" -> 1 (SOP), "0" -> 0 (POS)
-  const [structType, setStructType] = useState("sop");       // "sop" -> SOP, "pos" -> POS
-
-  const vs = useMemo(() => names.slice(0, nv), [names, nv]);
-
-  const comp = useMemo(() => {
-    const rows = 1 << nv;
-    const outs = Array(rows).fill(0);
-    const dcs = dcStr.split(/[\s,]+/).map(Number).filter(x => !isNaN(x) && x >= 0 && x < rows);
-    if (mode === "expr" && expr.trim()) {
-      for (let i = 0; i < rows; i++) {
-        if (dcs.includes(i)) { outs[i] = "x"; continue; }
-        const vals = Array.from({ length: nv }, (_, j) => i >> nv - 1 - j & 1);
-        outs[i] = evalExpr(expr, vals, vs);
+      class BParser {
+        constructor(toks, map) {
+          this.toks = toks;
+          this.i = 0;
+          this.m = map;
+        }
+        p() {
+          return this.toks[this.i];
+        }
+        e() {
+          return this.toks[this.i++];
+        }
+        expr() {
+          let v = this.term();
+          while (this.p()?.t === "OR") {
+            this.e();
+            v |= this.term();
+          }
+          return v & 1;
+        }
+        term() {
+          let v = this.fac();
+          while (this.p()) {
+            const t = this.p().t;
+            if (t === "OR" || t === "RP") break;
+            if (t === "AND") this.e();
+            else if (t !== "V" && t !== "LP" && t !== "PP") break;
+            v &= this.fac();
+          }
+          return v & 1;
+        }
+        fac() {
+          let neg = 0;
+          while (this.p()?.t === "PP") {
+            this.e();
+            neg ^= 1;
+          }
+          let v = this.atom();
+          while (this.p()?.t === "NP") {
+            this.e();
+            neg ^= 1;
+          }
+          return neg ? v ^ 1 : v;
+        }
+        atom() {
+          const t = this.p();
+          if (!t) return 0;
+          if (t.t === "LP") {
+            this.e();
+            const v = this.expr();
+            if (this.p()?.t === "RP") this.e();
+            return v;
+          }
+          if (t.t === "V") {
+            this.e();
+            return this.m[t.n] ?? 0;
+          }
+          return 0;
+        }
       }
-    } else if (mode === "mt") {
-      const mts = mtStr.split(/[\s,]+/).map(Number).filter(x => !isNaN(x) && x >= 0 && x < rows);
-      for (let i = 0; i < rows; i++) outs[i] = dcs.includes(i) ? "x" : mts.includes(i) ? 1 : 0;
-    } else if (mode === "mx") {
-      const mxs = mxStr.split(/[\s,]+/).map(Number).filter(x => !isNaN(x) && x >= 0 && x < rows);
-      for (let i = 0; i < rows; i++) outs[i] = dcs.includes(i) ? "x" : mxs.includes(i) ? 0 : 1;
-    } else if (mode === "tt") {
-      for (let i = 0; i < rows; i++) outs[i] = dcs.includes(i) ? "x" : ttIn[i] ?? 0;
-    } else if (mode === "km") {
-      for (let i = 0; i < rows; i++) outs[i] = kmIn[i] ?? 0;
-    }
-    const mts = [], mxs = [], dontC = [];
-    outs.forEach((v, i) => { if (v === 1) mts.push(i); else if (v === 0) mxs.push(i); else dontC.push(i); });
-    return { outs, mts, mxs, dontC };
-  }, [nv, vs, mode, expr, ttIn, kmIn, mtStr, mxStr, dcStr]);
 
-  const sopR = useMemo(() => {
-    const r = runQMC(comp.mts, comp.dontC, nv);
-    return { ...r, cover: findCover(r.pis, comp.mts) };
-  }, [comp.mts, comp.dontC, nv]);
+      function evalExpr(expr, vals, names) {
+        try {
+          const toks = lex(expr, names);
+          const map = Object.fromEntries(
+            names.map((n, i) => [n.toLowerCase(), vals[i]]),
+          );
+          return new BParser(toks, map).expr();
+        } catch {
+          return 0;
+        }
+      }
 
-  const posR = useMemo(() => {
-    const r = runQMC(comp.mxs, comp.dontC, nv);
-    return { ...r, cover: findCover(r.pis, comp.mxs) };
-  }, [comp.mxs, comp.dontC, nv]);
+      // ═══════════════════════════════════════════════
+      // ALGORYTM QUINE'A-McCLUSKEYA
+      // ═══════════════════════════════════════════════
 
-  const minSOP = comp.mts.length === 0 ? "0" : comp.mts.length === 1 << nv ? "1" : sopR.cover.map(pi => fmtSOP(pi.term, vs)).join(" + ") || "1";
-  const minPOS = comp.mxs.length === 0 ? "1" : comp.mxs.length === 1 << nv ? "0" : posR.cover.map(pi => fmtPOS(pi.term, vs)).join(" · ") || "0";
+      const d2b = (n, bits) => n.toString(2).padStart(bits, "0");
 
-  // Wybór pokrycia na podstawie jawnie ustawionego celu optymalizacji
-  const gateCover = useMemo(() => {
-    return optimizeTarget === "1" ? sopR.cover : posR.cover;
-  }, [optimizeTarget, sopR.cover, posR.cover]);
+      function merge(a, b) {
+        let d = 0,
+          p = -1;
+        for (let i = 0; i < a.length; i++) {
+          if (a[i] === "-" && b[i] === "-") continue;
+          if (a[i] === "-" || b[i] === "-") return null;
+          if (a[i] !== b[i]) {
+            if (++d > 1) return null;
+            p = i;
+          }
+        }
+        return d === 1 ? a.slice(0, p) + "-" + a.slice(p + 1) : null;
+      }
 
-  // Swobodne przełączanie: ustawia tylko sugestię, ale niczego nie blokuje!
-  const handleGtypeChange = (type) => {
-    setGtype(type);
-    if (type === "nand") {
-      setOptimizeTarget("1");
-      setStructType("sop");
-    } else if (type === "nor") {
-      setOptimizeTarget("0");
-      setStructType("pos");
-    }
-  };
+      function runQMC(mts, dcs, n) {
+        if (!mts.length) return { pis: [], steps: [] };
+        const all = [...new Set([...mts, ...dcs])];
+        let tm = Object.fromEntries(
+          all.map((m) => [d2b(m, n), mts.includes(m) ? [m] : []]),
+        );
+        let cur = Object.keys(tm);
+        const pis = [],
+          steps = [];
+        for (let it = 0; it < 20; it++) {
+          const grp = {};
+          cur.forEach((t) => {
+            const k = [...t].filter((c) => c === "1").length;
+            (grp[k] = grp[k] || []).push(t);
+          });
+          steps.push({ it, grp: JSON.parse(JSON.stringify(grp)) });
+          const used = new Set(),
+            ntm = {};
+          let any = false;
+          const ks = Object.keys(grp)
+            .map(Number)
+            .sort((a, b) => a - b);
+          for (let i = 0; i < ks.length - 1; i++) {
+            for (const t1 of grp[ks[i]])
+              for (const t2 of grp[ks[i + 1]]) {
+                const c = merge(t1, t2);
+                if (c !== null) {
+                  used.add(t1);
+                  used.add(t2);
+                  any = true;
+                  if (!ntm[c]) ntm[c] = [];
+                  [...(tm[t1] || []), ...(tm[t2] || [])].forEach((m) => {
+                    if (!ntm[c].includes(m)) ntm[c].push(m);
+                  });
+                }
+              }
+          }
+          cur.forEach((t) => {
+            if (!used.has(t) && !pis.find((p) => p.term === t))
+              pis.push({
+                term: t,
+                mts: (tm[t] || []).filter((m) => mts.includes(m)),
+              });
+          });
+          if (!any) break;
+          Object.assign(tm, ntm);
+          cur = Object.keys(ntm);
+        }
+        return { pis, steps };
+      }
 
-  const card = { background: "white", borderRadius: 10, padding: 16, marginBottom: 12, boxShadow: "0 2px 10px rgba(0,0,0,0.06)" };
-  const inpSt = { width: "100%", padding: "9px 13px", borderRadius: 7, border: "1.5px solid #cbd5e1", fontSize: 14, fontFamily: "monospace", outline: "none" };
-  const formula = { fontFamily: "Georgia,serif", fontSize: 15, padding: "11px 16px", background: "#f8fafc", borderRadius: 8, border: "1.5px solid #e2e8f0", overflowX: "auto" };
-  const btn = (on, c = "#6366f1") => ({ padding: "7px 15px", borderRadius: 7, border: `2px solid ${c}`, cursor: "pointer", fontSize: 13, fontWeight: on ? 600 : 400, background: on ? c : "white", color: on ? "white" : c });
-  const tabBtn = on => ({ padding: "8px 15px", border: "none", borderRadius: "7px 7px 0 0", cursor: "pointer", fontSize: 13, fontWeight: on ? 600 : 400, background: on ? "white" : "#e9ecef", color: on ? "#1e293b" : "#64748b", borderBottom: on ? "3px solid #6366f1" : "3px solid transparent" });
-  const thSt = d => ({ background: d ? "#1e293b" : "#334155", color: "white", padding: "8px 14px", textAlign: "center", fontWeight: 600 });
-  const tdSt = { padding: "6px 14px", textAlign: "center", borderBottom: "1px solid #f1f5f9" };
+      function findCover(pis, mts) {
+        if (!mts.length) return [];
+        const cov = Object.fromEntries(mts.map((m) => [m, []]));
+        pis.forEach((pi, i) =>
+          pi.mts.forEach((m) => {
+            if (cov[m]) cov[m].push(i);
+          }),
+        );
+        const sel = new Set(),
+          done = new Set();
+        Object.entries(cov).forEach(([, arr]) => {
+          if (arr.length === 1) {
+            sel.add(arr[0]);
+            pis[arr[0]].mts.forEach((x) => done.add(x));
+          }
+        });
+        const rem = new Set(mts.filter((m) => !done.has(m)));
+        while (rem.size) {
+          let best = -1,
+            bn = 0;
+          pis.forEach((pi, i) => {
+            if (!sel.has(i)) {
+              const n = pi.mts.filter((m) => rem.has(m)).length;
+              if (n > bn) {
+                bn = n;
+                best = i;
+              }
+            }
+          });
+          if (best === -1 || !bn) break;
+          sel.add(best);
+          pis[best].mts.forEach((m) => rem.delete(m));
+        }
+        return [...sel].map((i) => pis[i]);
+      }
 
-  return /*#__PURE__*/React.createElement("div", { style: { fontFamily: "system-ui,sans-serif", maxWidth: 920, margin: "0 auto", padding: 16, background: "#f1f5f9", minHeight: "100vh" } },
-    /*#__PURE__*/React.createElement("div", { style: { background: "linear-gradient(135deg,#1e3a5f,#1e40af,#3730a3)", color: "white", padding: "18px 24px", borderRadius: 12, marginBottom: 14 } },
-      /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 10, justifyContent: "space-between", flexWrap: "wrap" } },
-        /*#__PURE__*/React.createElement("div", null,
-          /*#__PURE__*/React.createElement("div", { style: { fontSize: 22, fontWeight: 800, letterSpacing: "-0.5px" } }, "Bool Kombajn"),
-          /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, opacity: 0.6, marginTop: 3 } }, "Pełna kontrola nad syntezą logiczną z zer/jedynek na strukturach SOP/POS • by Paweł K")
-        ),
-        /*#__PURE__*/React.createElement("button", { onClick: () => window.print(), style: { padding: "8px 16px", borderRadius: 8, border: "2px solid rgba(255,255,255,0.6)", background: "rgba(255,255,255,0.15)", color: "white", fontSize: 13, cursor: "pointer" } }, "🖨️ Drukuj / PDF")
-      )
-    ),
-    /*#__PURE__*/React.createElement("div", { style: card },
-      /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 20, flexWrap: "wrap", alignItems: "flex-end" } },
-        /*#__PURE__*/React.createElement("div", null,
-          /*#__PURE__*/React.createElement("div", { style: { fontSize: 12, color: "#64748b", marginBottom: 5, fontWeight: 600 } }, "LICZBA ZMIENNYCH"),
-          /*#__PURE__*/React.createElement("select", { style: { padding: "8px 12px", borderRadius: 7, border: "1.5px solid #cbd5e1", fontSize: 14 }, value: nv, onChange: e => setNv(+e.target.value) },
-            [2, 3, 4, 5, 6].map(n => /*#__PURE__*/React.createElement("option", { key: n, value: n }, n))
-          )
-        ),
-        /*#__PURE__*/React.createElement("div", null,
-          /*#__PURE__*/React.createElement("div", { style: { fontSize: 12, color: "#64748b", marginBottom: 5, fontWeight: 600 } }, "NAZWY ZMIENNYCH"),
-          /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 6 } },
-            vs.map((v, i) => /*#__PURE__*/React.createElement("input", { key: i, style: { width: 46, padding: "7px 4px", borderRadius: 6, border: "1.5px solid #cbd5e1", fontSize: 14, textAlign: "center", fontWeight: 700 }, value: v, maxLength: 4, onChange: e => setNames(p => { const n = [...p]; n[i] = e.target.value.toUpperCase(); return n; }) }))
-          )
-        )
-      )
-    ),
-    /*#__PURE__*/React.createElement("div", { style: card },
-      /*#__PURE__*/React.createElement("div", { style: { marginBottom: 14, display: "flex", gap: 6, flexWrap: "wrap" } },
-        [["km", "🗺️ Karnaugh"], ["expr", "📝 Wyrażenie"], ["mt", "∑ Mintermy"], ["mx", "Π Maxtermy"], ["tt", "🔢 Tabela"]].map(([id, lb]) => /*#__PURE__*/React.createElement("button", { key: id, style: btn(mode === id), onClick: () => setMode(id) }, lb))
-      ),
-      mode === "km" && /*#__PURE__*/React.createElement("div", null,
-        /*#__PURE__*/React.createElement(KMap, { n: Math.min(nv, 4), vs: vs, outs: comp.outs, cover: [], onCellClick: m => setKmIn(p => { const c = p[m] ?? 0; return { ...p, [m]: c === 0 ? 1 : c === 1 ? "x" : 0 }; }) }),
-        /*#__PURE__*/React.createElement("button", { onClick: () => setKmIn({}), style: { ...btn(false, "#ef4444"), marginTop: 10, fontSize: 12 } }, "🗑️ Wyczyść mapę")
-      ),
-      mode === "expr" && /*#__PURE__*/React.createElement("input", { style: inpSt, value: expr, onChange: e => setExpr(e.target.value.toUpperCase()), placeholder: "np. A B' + A' C" }),
-      mode === "mt" && /*#__PURE__*/React.createElement("input", { style: inpSt, value: mtStr, onChange: e => setMtStr(e.target.value), placeholder: "np. 0, 2, 5" }),
-      mode === "mx" && /*#__PURE__*/React.createElement("input", { style: inpSt, value: mxStr, onChange: e => setMxStr(e.target.value), placeholder: "np. 1, 3, 4" }),
-      mode === "tt" && /*#__PURE__*/React.createElement("div", { style: { fontSize: 13, color: "#475569" } }, "Przejdź do zakładki Tabela i klikaj f, aby wprowadzać wartości.")
-    ),
-    /*#__PURE__*/React.createElement("div", null,
-      /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 2, flexWrap: "wrap" } },
-        [["tt", "📊 Tabela"], ["can", "📐 Kanoniczna"], ["min", "✂️ Minimalna"], ["km", "🗺️ Karnaugh"], ["gt", "⚡ Bramki"]].map(([id, lb]) => /*#__PURE__*/React.createElement("button", { key: id, style: tabBtn(tab === id), onClick: () => setTab(id) }, lb))
-      ),
-      /*#__PURE__*/React.createElement("div", { style: { background: "white", borderRadius: "0 8px 8px 8px", padding: 22, border: "1.5px solid #e2e8f0" } },
-        tab === "tt" && /*#__PURE__*/React.createElement("table", { style: { borderCollapse: "collapse", fontSize: 13, width: "100%" } },
-          /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", { style: thSt(false) }, "#"), vs.map(v => /*#__PURE__*/React.createElement("th", { key: v, style: thSt(false) }, v)), /*#__PURE__*/React.createElement("th", { style: thSt(true) }, "f"))),
-          /*#__PURE__*/React.createElement("tbody", null, comp.outs.map((out, i) => /*#__PURE__*/React.createElement("tr", { key: i, style: { background: out === 1 ? "#f0fdf4" : out === "x" ? "#faf5ff" : "white" } },
-            /*#__PURE__*/React.createElement("td", { style: tdSt }, i),
-            vs.map((_, j) => /*#__PURE__*/React.createElement("td", { key: j, style: tdSt }, i >> nv - 1 - j & 1)),
-            /*#__PURE__*/React.createElement("td", { style: { ...tdSt, fontWeight: 700, cursor: mode === "tt" ? "pointer" : "default" }, onClick: () => { if (mode !== "tt") return; setTtIn(p => { const c = p[i] ?? 0; return { ...p, [i]: c === 0 ? 1 : c === 1 ? "x" : 0 }; }); } }, String(out))
-          )))
-        ),
-        tab === "can" && /*#__PURE__*/React.createElement("div", null,
-          /*#__PURE__*/React.createElement("h3", null, "Kanoniczna SOP"), /*#__PURE__*/React.createElement("div", { style: formula }, comp.mts.map(m => fmtMT(m, nv, vs)).join(" + ") || "0"),
-          /*#__PURE__*/React.createElement("h3", null, "Kanoniczna POS"), /*#__PURE__*/React.createElement("div", { style: formula }, comp.mxs.map(m => fmtMX(m, nv, vs)).join(" · ") || "1")
-        ),
-        tab === "min" && /*#__PURE__*/React.createElement("div", null,
-          /*#__PURE__*/React.createElement("h3", null, "Minimalna SOP"), /*#__PURE__*/React.createElement("div", { style: formula }, minSOP),
-          /*#__PURE__*/React.createElement("h3", null, "Minimalna POS"), /*#__PURE__*/React.createElement("div", { style: formula }, minPOS)
-        ),
-        tab === "km" && /*#__PURE__*/React.createElement(KMap, { n: nv, vs: vs, outs: comp.outs, cover: gateCover }),
-        tab === "gt" && /*#__PURE__*/React.createElement("div", null,
-          /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12, marginBottom: 20, padding: 12, background: "#fffbeb", borderRadius: 8, border: "1.5px solid #f59e0b" } },
-            /*#__PURE__*/React.createElement("div", null,
-              /*#__PURE__*/React.createElement("label", { style: { display: "block", fontSize: 11, fontWeight: 700, color: "#475569", marginBottom: 4 } }, "1. BAZA PROJEKTU (TECHNOLOGIA)"),
-              /*#__PURE__*/React.createElement("select", { style: { width: "100%", padding: "6px", borderRadius: 5, fontWeight: "bold", border: "1.5px solid #d97706" }, value: gtype, onChange: e => handleGtypeChange(e.target.value) },
-                /*#__PURE__*/React.createElement("option", { value: "and-or" }, "AND-OR / OR-AND (Mieszane)"),
-                /*#__PURE__*/React.createElement("option", { value: "nand" }, "Same bramki NAND"),
-                /*#__PURE__*/React.createElement("option", { value: "nor" }, "Same bramki NOR")
-              )
+      // ═══════════════════════════════════════════════
+      // FORMATOWANIE WYRAŻEŃ
+      // ═══════════════════════════════════════════════
+
+      const fmtSOP = (term, vs) =>
+        [...term]
+          .map((c, i) => (c === "1" ? vs[i] : c === "0" ? vs[i] + "'" : ""))
+          .join("") || "1";
+      const fmtPOS = (term, vs) => {
+        const ts = [...term]
+          .map((c, i) => (c === "0" ? vs[i] : c === "1" ? vs[i] + "'" : ""))
+          .filter(Boolean);
+        return ts.length ? "(" + ts.join("+") + ")" : "0";
+      };
+      const fmtMT = (m, n, vs) =>
+        d2b(m, n)
+          .split("")
+          .map((b, i) => (b === "1" ? vs[i] : vs[i] + "'"))
+          .join("");
+      const fmtMX = (m, n, vs) =>
+        "(" +
+        d2b(m, n)
+          .split("")
+          .map((b, i) => (b === "0" ? vs[i] : vs[i] + "'"))
+          .join("+") +
+        ")";
+
+      // ═══════════════════════════════════════════════
+      // MAPA KARNAUGH
+      // ═══════════════════════════════════════════════
+
+      const G4 = [0, 1, 3, 2];
+      const G8 = [0, 1, 3, 2, 6, 7, 5, 4];
+      function kCells(n) {
+        if (n === 2)
+          return [
+            [0, 1],
+            [2, 3],
+          ].map((row, ri) => row.map((m, ci) => ({ ri, ci, m })));
+        if (n === 3)
+          return Array.from({ length: 2 }, (_, ri) =>
+            G4.map((g, ci) => ({ ri, ci, m: ri * 4 + g })),
+          );
+        if (n === 4)
+          return Array.from({ length: 4 }, (_, ri) =>
+            G4.map((g, ci) => ({ ri, ci, m: G4[ri] * 4 + G4[ci] })),
+          );
+        if (n === 5)
+          return Array.from({ length: 4 }, (_, ri) =>
+            G8.map((g, ci) => ({ ri, ci, m: G4[ri] * 8 + G8[ci] })),
+          );
+        return Array.from({ length: 8 }, (_, ri) =>
+          G8.map((g, ci) => ({ ri, ci, m: G8[ri] * 8 + G8[ci] })),
+        );
+      }
+      function piCoverage(term, n) {
+        const cells = [];
+        for (let m = 0; m < 1 << n; m++) {
+          if ([...d2b(m, n)].every((b, i) => term[i] === "-" || term[i] === b))
+            cells.push(m);
+        }
+        return cells;
+      }
+
+      const GRP_CLR = [
+        "#e74c3c",
+        "#27ae60",
+        "#2980b9",
+        "#d97706",
+        "#7c3aed",
+        "#0891b2",
+        "#db2777",
+        "#059669",
+      ];
+      const GRP_BG = [
+        "#fde8e8",
+        "#e8fdf0",
+        "#dbeafe",
+        "#fef3c7",
+        "#f5f3ff",
+        "#ecfeff",
+        "#fce7f3",
+        "#d1fae5",
+      ];
+
+      function KMap({ n, vs, outs, cover, onCellClick }) {
+        const cells = useMemo(() => kCells(n), [n]);
+        const colorMap = useMemo(() => {
+          const m = {};
+          cover.forEach((pi, i) =>
+            piCoverage(pi.term, n).forEach((cell) => {
+              (m[cell] = m[cell] || []).push(i);
+            }),
+          );
+          return m;
+        }, [cover, n]);
+        const rLbls =
+          n <= 3
+            ? ["0", "1"]
+            : n <= 5
+              ? ["00", "01", "11", "10"]
+              : ["000", "001", "011", "010", "110", "111", "101", "100"];
+        const cLbls =
+          n === 2
+            ? ["0", "1"]
+            : n <= 4
+              ? ["00", "01", "11", "10"]
+              : ["000", "001", "011", "010", "110", "111", "101", "100"];
+        const rVar =
+          n === 2
+            ? vs[0]
+            : n === 3
+              ? vs[0]
+              : n <= 5
+                ? `${vs[0]}${vs[1]}`
+                : `${vs[0]}${vs[1]}${vs[2]}`;
+        const cVar =
+          n === 2
+            ? vs[1]
+            : n === 3
+              ? `${vs[1]}${vs[2]}`
+              : n === 4
+                ? `${vs[2]}${vs[3]}`
+                : n === 5
+                  ? `${vs[2]}${vs[3]}${vs[4]}`
+                  : `${vs[3]}${vs[4]}${vs[5]}`;
+        return /*#__PURE__*/ React.createElement(
+          "div",
+          { style: { overflowX: "auto" } },
+          /*#__PURE__*/ React.createElement(
+            "table",
+            {
+              style: {
+                borderCollapse: "collapse",
+                margin: "8px auto",
+                fontFamily: "monospace",
+              },
+            },
+            /*#__PURE__*/ React.createElement(
+              "thead",
+              null,
+              /*#__PURE__*/ React.createElement(
+                "tr",
+                null,
+                /*#__PURE__*/ React.createElement(
+                  "td",
+                  {
+                    style: {
+                      padding: "4px 12px",
+                      color: "#94a3b8",
+                      fontSize: 12,
+                      textAlign: "center",
+                    },
+                  },
+                  /*#__PURE__*/ React.createElement("em", null, rVar),
+                  " \\ ",
+                  /*#__PURE__*/ React.createElement("em", null, cVar),
+                ),
+                cLbls.map((l) =>
+                  /*#__PURE__*/ React.createElement(
+                    "th",
+                    {
+                      key: l,
+                      style: {
+                        padding: "4px 16px",
+                        textAlign: "center",
+                        fontSize: 13,
+                        fontWeight: 600,
+                        color: "#334155",
+                      },
+                    },
+                    l,
+                  ),
+                ),
+              ),
             ),
-            /*#__PURE__*/React.createElement("div", null,
-              /*#__PURE__*/React.createElement("label", { style: { display: "block", fontSize: 11, fontWeight: 700, color: "#475569", marginBottom: 4 } }, "2. GENERUJ Z (0 CZY 1)"),
-              /*#__PURE__*/React.createElement("select", { style: { width: "100%", padding: "6px", borderRadius: 5, border: "1.5px solid #cbd5e1" }, value: optimizeTarget, onChange: e => setOptimizeTarget(e.target.value) },
-                /*#__PURE__*/React.createElement("option", { value: "1" }, "Z jedynek (1 -> SOP)"),
-                /*#__PURE__*/React.createElement("option", { value: "0" }, "Z zer (0 -> POS)")
-              )
+            /*#__PURE__*/ React.createElement(
+              "tbody",
+              null,
+              cells.map((row, ri) =>
+                /*#__PURE__*/ React.createElement(
+                  "tr",
+                  { key: ri },
+                  /*#__PURE__*/ React.createElement(
+                    "td",
+                    {
+                      style: {
+                        padding: "4px 16px",
+                        fontWeight: 600,
+                        fontSize: 13,
+                        color: "#334155",
+                        textAlign: "center",
+                      },
+                    },
+                    rLbls[ri],
+                  ),
+                  row.map(({ m }) => {
+                    const idxs = colorMap[m] || [];
+                    const val = outs[m];
+                    const bg = idxs.length
+                      ? GRP_BG[idxs[0] % GRP_BG.length]
+                      : val === 1
+                        ? "#f0fdf4"
+                        : val === "x"
+                          ? "#faf5ff"
+                          : "#fff5f5";
+                    const bd = idxs.length
+                      ? `2.5px solid ${GRP_CLR[idxs[0] % GRP_CLR.length]}`
+                      : "1.5px solid #cbd5e1";
+                    return /*#__PURE__*/ React.createElement(
+                      "td",
+                      {
+                        key: m,
+                        onClick: () => onCellClick && onCellClick(m),
+                        style: {
+                          width: 60,
+                          height: 60,
+                          textAlign: "center",
+                          verticalAlign: "middle",
+                          background: bg,
+                          border: bd,
+                          position: "relative",
+                          cursor: onCellClick ? "pointer" : "default",
+                        },
+                      },
+                      /*#__PURE__*/ React.createElement(
+                        "span",
+                        {
+                          style: {
+                            position: "absolute",
+                            top: 2,
+                            left: 4,
+                            fontSize: 9,
+                            color: "#94a3b8",
+                          },
+                        },
+                        m,
+                      ),
+                      /*#__PURE__*/ React.createElement(
+                        "span",
+                        {
+                          style: {
+                            fontSize: 20,
+                            fontWeight: 700,
+                            color:
+                              val === 1
+                                ? "#15803d"
+                                : val === "x"
+                                  ? "#7c3aed"
+                                  : "#b91c1c",
+                          },
+                        },
+                        String(val),
+                      ),
+                    );
+                  }),
+                ),
+              ),
             ),
-            /*#__PURE__*/React.createElement("div", null,
-              /*#__PURE__*/React.createElement("label", { style: { display: "block", fontSize: 11, fontWeight: 700, color: "#475569", marginBottom: 4 } }, "3. POSTAĆ STRUKTURY SCHEMATU"),
-              /*#__PURE__*/React.createElement("select", { style: { width: "100%", padding: "6px", borderRadius: 5, border: "1.5px solid #cbd5e1" }, value: structType, onChange: e => setStructType(e.target.value) },
-                /*#__PURE__*/React.createElement("option", { value: "sop" }, "SOP (Suma iloczynów)"),
-                /*#__PURE__*/React.createElement("option", { value: "pos" }, "POS (Iloczyn sum)")
-              )
-            )
           ),
-          /*#__PURE__*/React.createElement(Gates, { cover: gateCover, vs: vs, type: gtype, structType: structType })
-        )
-      )
-    )
-  );
-}
+        );
+      }
 
-ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
-  </script>
-</body>
+      // ═══════════════════════════════════════════════
+      // KOMPONENT: SCHEMAT BRAMKOWY SVG
+      // ═══════════════════════════════════════════════
+
+      function Gates({ cover, vs, type, structType }) {
+        if (!cover.length)
+          return /*#__PURE__*/ React.createElement(
+            "div",
+            {
+              style: {
+                padding: 24,
+                color: "#94a3b8",
+                textAlign: "center",
+                fontSize: 14,
+              },
+            },
+            "Wprowadź dane, aby wygenerować schemat.",
+          );
+
+        const isPOS = structType === "pos";
+
+        const terms = cover.map((pi) => {
+          const lits = [...pi.term]
+            .map((c, i) => {
+              if (c === "-") return null;
+              return isPOS
+                ? { v: vs[i], vi: i, neg: c === "1" }
+                : { v: vs[i], vi: i, neg: c === "0" };
+            })
+            .filter(Boolean);
+          return {
+            lits,
+            outLabel: isPOS ? fmtPOS(pi.term, vs) : fmtSOP(pi.term, vs),
+          };
+        });
+
+        const needsInv = new Set();
+        terms.forEach((t) =>
+          t.lits.forEach((l) => {
+            if (l.neg) needsInv.add(l.vi);
+          }),
+        );
+
+        const GW = 68,
+          GH = 38;
+        const INV_W = 34,
+          INV_H = 24;
+        const dotR = 6;
+
+        const X_LBL = 18;
+        const X_INV = 60;
+        const X1 = X_INV + INV_W + 90;
+        const X2 = X1 + GW + 140;
+        const NV = vs.length;
+        const NR = terms.length;
+
+        const VAR_SPACING = Math.max(44, Math.min(60, 320 / Math.max(NV, 1)));
+        const VGAP = Math.max(68, Math.min(90, 380 / Math.max(NR, 1)));
+
+        const varY = Array.from({ length: NV }, (_, i) => 30 + i * VAR_SPACING);
+        const rowY = terms.map((_, i) => 30 + i * VGAP);
+        const SVG_H = Math.max(NV * VAR_SPACING + 60, NR * VGAP + 60, 200);
+        const outY = SVG_H / 2 - GH / 2;
+
+        let n1 = "AND",
+          n2 = "OR";
+        let hasDotFirst = false,
+          hasDotSecond = false;
+
+        if (type === "nand") {
+          if (isPOS) {
+            n1 = "NAND";
+            n2 = "AND";
+            hasDotFirst = true;
+            hasDotSecond = false;
+          } else {
+            n1 = "NAND";
+            n2 = "NAND";
+            hasDotFirst = true;
+            hasDotSecond = true;
+          }
+        } else if (type === "nor") {
+          if (isPOS) {
+            n1 = "NOR";
+            n2 = "NOR";
+            hasDotFirst = true;
+            hasDotSecond = true;
+          } else {
+            n1 = "NOR";
+            n2 = "OR";
+            hasDotFirst = true;
+            hasDotSecond = false;
+          }
+        } else {
+          if (isPOS) {
+            n1 = "OR";
+            n2 = "AND";
+          } else {
+            n1 = "AND";
+            n2 = "OR";
+          }
+        }
+
+        const els = [];
+        let uid = 0;
+        const k = () => uid++;
+
+        vs.forEach((v, i) => {
+          const cy = varY[i] + INV_H / 2;
+          els.push(
+            /*#__PURE__*/ React.createElement(
+              "text",
+              {
+                key: k(),
+                x: X_LBL,
+                y: cy + 5,
+                fontSize: 14,
+                fontFamily: "Georgia, serif",
+                fontWeight: "700",
+                fill: "#1e293b",
+              },
+              v,
+            ),
+          );
+          if (needsInv.has(i)) {
+            els.push(
+              /*#__PURE__*/ React.createElement("line", {
+                key: k(),
+                x1: X_LBL + 16,
+                y1: cy,
+                x2: X_INV,
+                y2: cy,
+                stroke: "#475569",
+                strokeWidth: 1.5,
+              }),
+            );
+            const invLabel =
+              type === "nand" || type === "nor" ? type.toUpperCase() : "NOT";
+            els.push(
+              /*#__PURE__*/ React.createElement("rect", {
+                key: k(),
+                x: X_INV,
+                y: varY[i],
+                width: INV_W,
+                height: INV_H,
+                rx: 4,
+                fill: "#fce7f3",
+                stroke: "#db2777",
+                strokeWidth: 1.5,
+              }),
+            );
+            els.push(
+              /*#__PURE__*/ React.createElement(
+                "text",
+                {
+                  key: k(),
+                  x: X_INV + INV_W / 2,
+                  y: varY[i] + INV_H / 2 + 3,
+                  textAnchor: "middle",
+                  fontSize: 8,
+                  fontWeight: "700",
+                  fill: "#9d174d",
+                },
+                invLabel,
+              ),
+            );
+            els.push(
+              /*#__PURE__*/ React.createElement("circle", {
+                key: k(),
+                cx: X_INV + INV_W + 5,
+                cy: cy,
+                r: 5,
+                fill: "white",
+                stroke: "#db2777",
+                strokeWidth: 1.5,
+              }),
+            );
+            els.push(
+              /*#__PURE__*/ React.createElement(
+                "text",
+                {
+                  key: k(),
+                  x: X_INV + INV_W + 14,
+                  y: cy - 5,
+                  fontSize: 11,
+                  fontFamily: "Georgia, serif",
+                  fill: "#9d174d",
+                },
+                v,
+                "'",
+              ),
+            );
+          } else {
+            els.push(
+              /*#__PURE__*/ React.createElement("line", {
+                key: k(),
+                x1: X_LBL + 16,
+                y1: cy,
+                x2: X_INV + INV_W + 14,
+                y2: cy,
+                stroke: "#475569",
+                strokeWidth: 1.5,
+                strokeDasharray: "4 2",
+              }),
+            );
+          }
+        });
+
+        terms.forEach((term, ti) => {
+          const gx = X1,
+            gy = rowY[ti];
+          const nin = Math.max(term.lits.length, 1);
+          const centerY = gy + GH / 2;
+
+          els.push(
+            /*#__PURE__*/ React.createElement("rect", {
+              key: k(),
+              x: gx,
+              y: gy,
+              width: GW,
+              height: GH,
+              rx: 6,
+              fill: "#dbeafe",
+              stroke: "#3b82f6",
+              strokeWidth: 2,
+            }),
+          );
+          els.push(
+            /*#__PURE__*/ React.createElement(
+              "text",
+              {
+                key: k(),
+                x: gx + GW / 2,
+                y: gy + GH / 2 + 5,
+                textAnchor: "middle",
+                fontSize: 11,
+                fontWeight: "700",
+                fill: "#1e40af",
+              },
+              n1,
+            ),
+          );
+          if (hasDotFirst)
+            els.push(
+              /*#__PURE__*/ React.createElement("circle", {
+                key: k(),
+                cx: gx + GW + dotR,
+                cy: centerY,
+                r: dotR,
+                fill: "white",
+                stroke: "#3b82f6",
+                strokeWidth: 2,
+              }),
+            );
+
+          term.lits.forEach((lit, li) => {
+            const wy = gy + (GH * (li + 1)) / (nin + 1);
+            const lbl = lit.neg ? lit.v + "'" : lit.v;
+            els.push(
+              /*#__PURE__*/ React.createElement("line", {
+                key: k(),
+                x1: gx - 45,
+                y1: wy,
+                x2: gx,
+                y2: wy,
+                stroke: lit.neg ? "#db2777" : "#475569",
+                strokeWidth: 1.5,
+              }),
+            );
+            els.push(
+              /*#__PURE__*/ React.createElement("circle", {
+                key: k(),
+                cx: gx - 45,
+                y: wy,
+                r: 2.5,
+                fill: lit.neg ? "#db2777" : "#475569",
+              }),
+            );
+            els.push(
+              /*#__PURE__*/ React.createElement(
+                "text",
+                {
+                  key: k(),
+                  x: gx - 50,
+                  y: wy + 4.5,
+                  textAnchor: "end",
+                  fontSize: 13,
+                  fontFamily: "Georgia, serif",
+                  fill: lit.neg ? "#9d174d" : "#1e293b",
+                },
+                lbl,
+              ),
+            );
+          });
+
+          const outX = hasDotFirst ? gx + GW + dotR * 2 + 2 : gx + GW;
+          els.push(
+            /*#__PURE__*/ React.createElement(
+              "text",
+              {
+                key: k(),
+                x: outX + 3,
+                y: gy - 4,
+                fontSize: 9,
+                fill: "#94a3b8",
+                fontFamily: "monospace",
+              },
+              term.outLabel,
+            ),
+          );
+
+          const inY = outY + (GH * (ti + 1)) / (NR + 1);
+          const midX = outX + (X2 - outX) * 0.5;
+          els.push(
+            /*#__PURE__*/ React.createElement("path", {
+              key: k(),
+              d: `M${outX},${centerY} H${midX} V${inY} H${X2}`,
+              stroke: "#64748b",
+              strokeWidth: 1.5,
+              fill: "none",
+            }),
+          );
+          els.push(
+            /*#__PURE__*/ React.createElement("circle", {
+              key: k(),
+              cx: X2,
+              cy: inY,
+              r: 2.5,
+              fill: "#64748b",
+            }),
+          );
+        });
+
+        const g2y = outY;
+        els.push(
+          /*#__PURE__*/ React.createElement("rect", {
+            key: k(),
+            x: X2,
+            y: g2y,
+            width: GW,
+            height: GH,
+            rx: 6,
+            fill: "#fef3c7",
+            stroke: "#d97706",
+            strokeWidth: 2,
+          }),
+        );
+        els.push(
+          /*#__PURE__*/ React.createElement(
+            "text",
+            {
+              key: k(),
+              x: X2 + GW / 2,
+              y: g2y + GH / 2 + 5,
+              textAnchor: "middle",
+              fontSize: 11,
+              fontWeight: "700",
+              fill: "#92400e",
+            },
+            n2,
+          ),
+        );
+        if (hasDotSecond)
+          els.push(
+            /*#__PURE__*/ React.createElement("circle", {
+              key: k(),
+              cx: X2 + GW + dotR,
+              cy: g2y + GH / 2,
+              r: dotR,
+              fill: "white",
+              stroke: "#d97706",
+              strokeWidth: 2,
+            }),
+          );
+
+        const fX = hasDotSecond ? X2 + GW + dotR * 2 + 3 : X2 + GW + 3;
+        const fY = g2y + GH / 2;
+        els.push(
+          /*#__PURE__*/ React.createElement("line", {
+            key: k(),
+            x1: fX,
+            y1: fY,
+            x2: fX + 50,
+            y2: fY,
+            stroke: "#15803d",
+            strokeWidth: 2.5,
+          }),
+        );
+        els.push(
+          /*#__PURE__*/ React.createElement("circle", {
+            key: k(),
+            cx: fX + 50,
+            cy: fY,
+            r: 3,
+            fill: "#15803d",
+          }),
+        );
+        els.push(
+          /*#__PURE__*/ React.createElement(
+            "text",
+            {
+              key: k(),
+              x: fX + 56,
+              y: fY + 6,
+              fontSize: 17,
+              fontFamily: "Georgia, serif",
+              fontWeight: "700",
+              fill: "#15803d",
+            },
+            "f",
+          ),
+        );
+
+        const svgW = fX + 80;
+        return /*#__PURE__*/ React.createElement(
+          "div",
+          { style: { overflowX: "auto" } },
+          /*#__PURE__*/ React.createElement(
+            "svg",
+            {
+              width: svgW,
+              height: SVG_H,
+              style: { minWidth: svgW, display: "block" },
+            },
+            els,
+          ),
+        );
+      }
+
+      // ═══════════════════════════════════════════════
+      // GŁÓWNY KOMPONENT
+      // ═══════════════════════════════════════════════
+
+      function App() {
+        const [nv, setNv] = useState(3);
+        // Zmiana domyślnych nazw zmiennych: A B C D E F → x1 x2 x3 x4 x5 x6
+        const [names, setNames] = useState([
+          "x1",
+          "x2",
+          "x3",
+          "x4",
+          "x5",
+          "x6",
+        ]);
+        const [mode, setMode] = useState("km");
+        const [expr, setExpr] = useState("");
+        const [ttIn, setTtIn] = useState({});
+        const [kmIn, setKmIn] = useState({});
+        const [mtStr, setMtStr] = useState("");
+        const [mxStr, setMxStr] = useState("");
+        const [dcStr, setDcStr] = useState("");
+        const [tab, setTab] = useState("tt");
+
+        const [gtype, setGtype] = useState("and-or");
+        const [optimizeTarget, setOptimizeTarget] = useState("1"); // "1" -> 1 (SOP), "0" -> 0 (POS)
+        const [structType, setStructType] = useState("sop"); // "sop" -> SOP, "pos" -> POS
+
+        const vs = useMemo(() => names.slice(0, nv), [names, nv]);
+
+        const comp = useMemo(() => {
+          const rows = 1 << nv;
+          const outs = Array(rows).fill(0);
+          const dcs = dcStr
+            .split(/[\s,]+/)
+            .map(Number)
+            .filter((x) => !isNaN(x) && x >= 0 && x < rows);
+          if (mode === "expr" && expr.trim()) {
+            for (let i = 0; i < rows; i++) {
+              if (dcs.includes(i)) {
+                outs[i] = "x";
+                continue;
+              }
+              const vals = Array.from(
+                { length: nv },
+                (_, j) => (i >> (nv - 1 - j)) & 1,
+              );
+              outs[i] = evalExpr(expr, vals, vs);
+            }
+          } else if (mode === "mt") {
+            const mts = mtStr
+              .split(/[\s,]+/)
+              .map(Number)
+              .filter((x) => !isNaN(x) && x >= 0 && x < rows);
+            for (let i = 0; i < rows; i++)
+              outs[i] = dcs.includes(i) ? "x" : mts.includes(i) ? 1 : 0;
+          } else if (mode === "mx") {
+            const mxs = mxStr
+              .split(/[\s,]+/)
+              .map(Number)
+              .filter((x) => !isNaN(x) && x >= 0 && x < rows);
+            for (let i = 0; i < rows; i++)
+              outs[i] = dcs.includes(i) ? "x" : mxs.includes(i) ? 0 : 1;
+          } else if (mode === "tt") {
+            for (let i = 0; i < rows; i++)
+              outs[i] = dcs.includes(i) ? "x" : (ttIn[i] ?? 0);
+          } else if (mode === "km") {
+            for (let i = 0; i < rows; i++) outs[i] = kmIn[i] ?? 0;
+          }
+          const mts = [],
+            mxs = [],
+            dontC = [];
+          outs.forEach((v, i) => {
+            if (v === 1) mts.push(i);
+            else if (v === 0) mxs.push(i);
+            else dontC.push(i);
+          });
+          return { outs, mts, mxs, dontC };
+        }, [nv, vs, mode, expr, ttIn, kmIn, mtStr, mxStr, dcStr]);
+
+        const sopR = useMemo(() => {
+          const r = runQMC(comp.mts, comp.dontC, nv);
+          return { ...r, cover: findCover(r.pis, comp.mts) };
+        }, [comp.mts, comp.dontC, nv]);
+
+        const posR = useMemo(() => {
+          const r = runQMC(comp.mxs, comp.dontC, nv);
+          return { ...r, cover: findCover(r.pis, comp.mxs) };
+        }, [comp.mxs, comp.dontC, nv]);
+
+        const minSOP =
+          comp.mts.length === 0
+            ? "0"
+            : comp.mts.length === 1 << nv
+              ? "1"
+              : sopR.cover.map((pi) => fmtSOP(pi.term, vs)).join(" + ") || "1";
+        const minPOS =
+          comp.mxs.length === 0
+            ? "1"
+            : comp.mxs.length === 1 << nv
+              ? "0"
+              : posR.cover.map((pi) => fmtPOS(pi.term, vs)).join(" · ") || "0";
+
+        // Wybór pokrycia na podstawie jawnie ustawionego celu optymalizacji
+        const gateCover = useMemo(() => {
+          return optimizeTarget === "1" ? sopR.cover : posR.cover;
+        }, [optimizeTarget, sopR.cover, posR.cover]);
+
+        // Swobodne przełączanie: ustawia tylko sugestię, ale niczego nie blokuje!
+        const handleGtypeChange = (type) => {
+          setGtype(type);
+          if (type === "nand") {
+            setOptimizeTarget("1");
+            setStructType("sop");
+          } else if (type === "nor") {
+            setOptimizeTarget("0");
+            setStructType("pos");
+          }
+        };
+
+        const card = {
+          background: "white",
+          borderRadius: 10,
+          padding: 16,
+          marginBottom: 12,
+          boxShadow: "0 2px 10px rgba(0,0,0,0.06)",
+        };
+        const inpSt = {
+          width: "100%",
+          padding: "9px 13px",
+          borderRadius: 7,
+          border: "1.5px solid #cbd5e1",
+          fontSize: 14,
+          fontFamily: "monospace",
+          outline: "none",
+        };
+        const formula = {
+          fontFamily: "Georgia,serif",
+          fontSize: 15,
+          padding: "11px 16px",
+          background: "#f8fafc",
+          borderRadius: 8,
+          border: "1.5px solid #e2e8f0",
+          overflowX: "auto",
+        };
+        const btn = (on, c = "#6366f1") => ({
+          padding: "7px 15px",
+          borderRadius: 7,
+          border: `2px solid ${c}`,
+          cursor: "pointer",
+          fontSize: 13,
+          fontWeight: on ? 600 : 400,
+          background: on ? c : "white",
+          color: on ? "white" : c,
+        });
+        const tabBtn = (on) => ({
+          padding: "8px 15px",
+          border: "none",
+          borderRadius: "7px 7px 0 0",
+          cursor: "pointer",
+          fontSize: 13,
+          fontWeight: on ? 600 : 400,
+          background: on ? "white" : "#e9ecef",
+          color: on ? "#1e293b" : "#64748b",
+          borderBottom: on ? "3px solid #6366f1" : "3px solid transparent",
+        });
+        const thSt = (d) => ({
+          background: d ? "#1e293b" : "#334155",
+          color: "white",
+          padding: "8px 14px",
+          textAlign: "center",
+          fontWeight: 600,
+        });
+        const tdSt = {
+          padding: "6px 14px",
+          textAlign: "center",
+          borderBottom: "1px solid #f1f5f9",
+        };
+
+        return /*#__PURE__*/ React.createElement(
+          "div",
+          {
+            style: {
+              fontFamily: "system-ui,sans-serif",
+              maxWidth: 920,
+              margin: "0 auto",
+              padding: 16,
+              background: "#f1f5f9",
+              minHeight: "100vh",
+            },
+          },
+          /*#__PURE__*/ React.createElement(
+            "div",
+            {
+              style: {
+                background: "linear-gradient(135deg,#1e3a5f,#1e40af,#3730a3)",
+                color: "white",
+                padding: "18px 24px",
+                borderRadius: 12,
+                marginBottom: 14,
+              },
+            },
+            /*#__PURE__*/ React.createElement(
+              "div",
+              {
+                style: {
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  justifyContent: "space-between",
+                  flexWrap: "wrap",
+                },
+              },
+              /*#__PURE__*/ React.createElement(
+                "div",
+                null,
+                /*#__PURE__*/ React.createElement(
+                  "div",
+                  {
+                    style: {
+                      fontSize: 22,
+                      fontWeight: 800,
+                      letterSpacing: "-0.5px",
+                    },
+                  },
+                  "Bool Kombajn",
+                ),
+                /*#__PURE__*/ React.createElement(
+                  "div",
+                  { style: { fontSize: 11, opacity: 0.6, marginTop: 3 } },
+                  "Pełna kontrola nad syntezą logiczną z zer/jedynek na strukturach SOP/POS • by Paweł K",
+                ),
+              ),
+              /*#__PURE__*/ React.createElement(
+                "button",
+                {
+                  onClick: () => window.print(),
+                  style: {
+                    padding: "8px 16px",
+                    borderRadius: 8,
+                    border: "2px solid rgba(255,255,255,0.6)",
+                    background: "rgba(255,255,255,0.15)",
+                    color: "white",
+                    fontSize: 13,
+                    cursor: "pointer",
+                  },
+                },
+                "🖨️ Drukuj / PDF",
+              ),
+            ),
+          ),
+          /*#__PURE__*/ React.createElement(
+            "div",
+            { style: card },
+            /*#__PURE__*/ React.createElement(
+              "div",
+              {
+                style: {
+                  display: "flex",
+                  gap: 20,
+                  flexWrap: "wrap",
+                  alignItems: "flex-end",
+                },
+              },
+              /*#__PURE__*/ React.createElement(
+                "div",
+                null,
+                /*#__PURE__*/ React.createElement(
+                  "div",
+                  {
+                    style: {
+                      fontSize: 12,
+                      color: "#64748b",
+                      marginBottom: 5,
+                      fontWeight: 600,
+                    },
+                  },
+                  "LICZBA ZMIENNYCH",
+                ),
+                /*#__PURE__*/ React.createElement(
+                  "select",
+                  {
+                    style: {
+                      padding: "8px 12px",
+                      borderRadius: 7,
+                      border: "1.5px solid #cbd5e1",
+                      fontSize: 14,
+                    },
+                    value: nv,
+                    onChange: (e) => setNv(+e.target.value),
+                  },
+                  [2, 3, 4, 5, 6].map((n) =>
+                    /*#__PURE__*/ React.createElement(
+                      "option",
+                      { key: n, value: n },
+                      n,
+                    ),
+                  ),
+                ),
+              ),
+              /*#__PURE__*/ React.createElement(
+                "div",
+                null,
+                /*#__PURE__*/ React.createElement(
+                  "div",
+                  {
+                    style: {
+                      fontSize: 12,
+                      color: "#64748b",
+                      marginBottom: 5,
+                      fontWeight: 600,
+                    },
+                  },
+                  "NAZWY ZMIENNYCH",
+                ),
+                /*#__PURE__*/ React.createElement(
+                  "div",
+                  { style: { display: "flex", gap: 6 } },
+                  vs.map((v, i) =>
+                    /*#__PURE__*/ React.createElement("input", {
+                      key: i,
+                      style: {
+                        width: 50,
+                        padding: "7px 4px",
+                        borderRadius: 6,
+                        border: "1.5px solid #cbd5e1",
+                        fontSize: 14,
+                        textAlign: "center",
+                        fontWeight: 700,
+                      },
+                      value: v,
+                      maxLength: 4,
+                      onChange: (e) =>
+                        setNames((p) => {
+                          const n = [...p];
+                          n[i] = e.target.value.toUpperCase();
+                          return n;
+                        }),
+                    }),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          /*#__PURE__*/ React.createElement(
+            "div",
+            { style: card },
+            /*#__PURE__*/ React.createElement(
+              "div",
+              {
+                style: {
+                  marginBottom: 14,
+                  display: "flex",
+                  gap: 6,
+                  flexWrap: "wrap",
+                },
+              },
+              [
+                ["km", "🗺️ Karnaugh"],
+                ["expr", "📝 Wyrażenie"],
+                ["mt", "∑ Mintermy"],
+                ["mx", "Π Maxtermy"],
+                ["tt", "🔢 Tabela"],
+              ].map(([id, lb]) =>
+                /*#__PURE__*/ React.createElement(
+                  "button",
+                  {
+                    key: id,
+                    style: btn(mode === id),
+                    onClick: () => setMode(id),
+                  },
+                  lb,
+                ),
+              ),
+            ),
+            mode === "km" &&
+              /*#__PURE__*/ React.createElement(
+                "div",
+                null,
+                /*#__PURE__*/ React.createElement(KMap, {
+                  n: Math.min(nv, 4),
+                  vs: vs,
+                  outs: comp.outs,
+                  cover: [],
+                  onCellClick: (m) =>
+                    setKmIn((p) => {
+                      const c = p[m] ?? 0;
+                      return { ...p, [m]: c === 0 ? 1 : c === 1 ? "x" : 0 };
+                    }),
+                }),
+                /*#__PURE__*/ React.createElement(
+                  "button",
+                  {
+                    onClick: () => setKmIn({}),
+                    style: {
+                      ...btn(false, "#ef4444"),
+                      marginTop: 10,
+                      fontSize: 12,
+                    },
+                  },
+                  "🗑️ Wyczyść mapę",
+                ),
+              ),
+            mode === "expr" &&
+              /*#__PURE__*/ React.createElement("input", {
+                style: inpSt,
+                value: expr,
+                onChange: (e) => setExpr(e.target.value.toUpperCase()),
+                placeholder: "np. x1 x2' + x1' x3",
+              }),
+            mode === "mt" &&
+              /*#__PURE__*/ React.createElement("input", {
+                style: inpSt,
+                value: mtStr,
+                onChange: (e) => setMtStr(e.target.value),
+                placeholder: "np. 0, 2, 5",
+              }),
+            mode === "mx" &&
+              /*#__PURE__*/ React.createElement("input", {
+                style: inpSt,
+                value: mxStr,
+                onChange: (e) => setMxStr(e.target.value),
+                placeholder: "np. 1, 3, 4",
+              }),
+            mode === "tt" &&
+              /*#__PURE__*/ React.createElement(
+                "div",
+                { style: { fontSize: 13, color: "#475569" } },
+                "Przejdź do zakładki Tabela i klikaj f, aby wprowadzać wartości.",
+              ),
+          ),
+          /*#__PURE__*/ React.createElement(
+            "div",
+            null,
+            /*#__PURE__*/ React.createElement(
+              "div",
+              { style: { display: "flex", gap: 2, flexWrap: "wrap" } },
+              [
+                ["tt", "📊 Tabela"],
+                ["can", "📐 Kanoniczna"],
+                ["min", "✂️ Minimalna"],
+                ["km", "🗺️ Karnaugh"],
+                ["gt", "⚡ Bramki"],
+              ].map(([id, lb]) =>
+                /*#__PURE__*/ React.createElement(
+                  "button",
+                  {
+                    key: id,
+                    style: tabBtn(tab === id),
+                    onClick: () => setTab(id),
+                  },
+                  lb,
+                ),
+              ),
+            ),
+            /*#__PURE__*/ React.createElement(
+              "div",
+              {
+                style: {
+                  background: "white",
+                  borderRadius: "0 8px 8px 8px",
+                  padding: 22,
+                  border: "1.5px solid #e2e8f0",
+                },
+              },
+              tab === "tt" &&
+                /*#__PURE__*/ React.createElement(
+                  "table",
+                  {
+                    style: {
+                      borderCollapse: "collapse",
+                      fontSize: 13,
+                      width: "100%",
+                    },
+                  },
+                  /*#__PURE__*/ React.createElement(
+                    "thead",
+                    null,
+                    /*#__PURE__*/ React.createElement(
+                      "tr",
+                      null,
+                      /*#__PURE__*/ React.createElement(
+                        "th",
+                        { style: thSt(false) },
+                        "#",
+                      ),
+                      vs.map((v) =>
+                        /*#__PURE__*/ React.createElement(
+                          "th",
+                          { key: v, style: thSt(false) },
+                          v,
+                        ),
+                      ),
+                      /*#__PURE__*/ React.createElement(
+                        "th",
+                        { style: thSt(true) },
+                        "f",
+                      ),
+                    ),
+                  ),
+                  /*#__PURE__*/ React.createElement(
+                    "tbody",
+                    null,
+                    comp.outs.map((out, i) =>
+                      /*#__PURE__*/ React.createElement(
+                        "tr",
+                        {
+                          key: i,
+                          style: {
+                            background:
+                              out === 1
+                                ? "#f0fdf4"
+                                : out === "x"
+                                  ? "#faf5ff"
+                                  : "white",
+                          },
+                        },
+                        /*#__PURE__*/ React.createElement(
+                          "td",
+                          { style: tdSt },
+                          i,
+                        ),
+                        vs.map((_, j) =>
+                          /*#__PURE__*/ React.createElement(
+                            "td",
+                            { key: j, style: tdSt },
+                            (i >> (nv - 1 - j)) & 1,
+                          ),
+                        ),
+                        /*#__PURE__*/ React.createElement(
+                          "td",
+                          {
+                            style: {
+                              ...tdSt,
+                              fontWeight: 700,
+                              cursor: mode === "tt" ? "pointer" : "default",
+                            },
+                            onClick: () => {
+                              if (mode !== "tt") return;
+                              setTtIn((p) => {
+                                const c = p[i] ?? 0;
+                                return {
+                                  ...p,
+                                  [i]: c === 0 ? 1 : c === 1 ? "x" : 0,
+                                };
+                              });
+                            },
+                          },
+                          String(out),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              tab === "can" &&
+                /*#__PURE__*/ React.createElement(
+                  "div",
+                  null,
+                  /*#__PURE__*/ React.createElement(
+                    "h3",
+                    null,
+                    "Kanoniczna SOP",
+                  ),
+                  /*#__PURE__*/ React.createElement(
+                    "div",
+                    { style: formula },
+                    comp.mts.map((m) => fmtMT(m, nv, vs)).join(" + ") || "0",
+                  ),
+                  /*#__PURE__*/ React.createElement(
+                    "h3",
+                    null,
+                    "Kanoniczna POS",
+                  ),
+                  /*#__PURE__*/ React.createElement(
+                    "div",
+                    { style: formula },
+                    comp.mxs.map((m) => fmtMX(m, nv, vs)).join(" · ") || "1",
+                  ),
+                ),
+              tab === "min" &&
+                /*#__PURE__*/ React.createElement(
+                  "div",
+                  null,
+                  /*#__PURE__*/ React.createElement(
+                    "h3",
+                    null,
+                    "Minimalna SOP",
+                  ),
+                  /*#__PURE__*/ React.createElement(
+                    "div",
+                    { style: formula },
+                    minSOP,
+                  ),
+                  /*#__PURE__*/ React.createElement(
+                    "h3",
+                    null,
+                    "Minimalna POS",
+                  ),
+                  /*#__PURE__*/ React.createElement(
+                    "div",
+                    { style: formula },
+                    minPOS,
+                  ),
+                ),
+              tab === "km" &&
+                /*#__PURE__*/ React.createElement(KMap, {
+                  n: nv,
+                  vs: vs,
+                  outs: comp.outs,
+                  cover: gateCover,
+                }),
+              tab === "gt" &&
+                /*#__PURE__*/ React.createElement(
+                  "div",
+                  null,
+                  /*#__PURE__*/ React.createElement(
+                    "div",
+                    {
+                      style: {
+                        display: "grid",
+                        gridTemplateColumns:
+                          "repeat(auto-fit, minmax(220px, 1fr))",
+                        gap: 12,
+                        marginBottom: 20,
+                        padding: 12,
+                        background: "#fffbeb",
+                        borderRadius: 8,
+                        border: "1.5px solid #f59e0b",
+                      },
+                    },
+                    /*#__PURE__*/ React.createElement(
+                      "div",
+                      null,
+                      /*#__PURE__*/ React.createElement(
+                        "label",
+                        {
+                          style: {
+                            display: "block",
+                            fontSize: 11,
+                            fontWeight: 700,
+                            color: "#475569",
+                            marginBottom: 4,
+                          },
+                        },
+                        "1. BAZA PROJEKTU (TECHNOLOGIA)",
+                      ),
+                      /*#__PURE__*/ React.createElement(
+                        "select",
+                        {
+                          style: {
+                            width: "100%",
+                            padding: "6px",
+                            borderRadius: 5,
+                            fontWeight: "bold",
+                            border: "1.5px solid #d97706",
+                          },
+                          value: gtype,
+                          onChange: (e) => handleGtypeChange(e.target.value),
+                        },
+                        /*#__PURE__*/ React.createElement(
+                          "option",
+                          { value: "and-or" },
+                          "AND-OR / OR-AND (Mieszane)",
+                        ),
+                        /*#__PURE__*/ React.createElement(
+                          "option",
+                          { value: "nand" },
+                          "Same bramki NAND",
+                        ),
+                        /*#__PURE__*/ React.createElement(
+                          "option",
+                          { value: "nor" },
+                          "Same bramki NOR",
+                        ),
+                      ),
+                    ),
+                    /*#__PURE__*/ React.createElement(
+                      "div",
+                      null,
+                      /*#__PURE__*/ React.createElement(
+                        "label",
+                        {
+                          style: {
+                            display: "block",
+                            fontSize: 11,
+                            fontWeight: 700,
+                            color: "#475569",
+                            marginBottom: 4,
+                          },
+                        },
+                        "2. GENERUJ Z (0 CZY 1)",
+                      ),
+                      /*#__PURE__*/ React.createElement(
+                        "select",
+                        {
+                          style: {
+                            width: "100%",
+                            padding: "6px",
+                            borderRadius: 5,
+                            border: "1.5px solid #cbd5e1",
+                          },
+                          value: optimizeTarget,
+                          onChange: (e) => setOptimizeTarget(e.target.value),
+                        },
+                        /*#__PURE__*/ React.createElement(
+                          "option",
+                          { value: "1" },
+                          "Z jedynek (1 -> SOP)",
+                        ),
+                        /*#__PURE__*/ React.createElement(
+                          "option",
+                          { value: "0" },
+                          "Z zer (0 -> POS)",
+                        ),
+                      ),
+                    ),
+                    /*#__PURE__*/ React.createElement(
+                      "div",
+                      null,
+                      /*#__PURE__*/ React.createElement(
+                        "label",
+                        {
+                          style: {
+                            display: "block",
+                            fontSize: 11,
+                            fontWeight: 700,
+                            color: "#475569",
+                            marginBottom: 4,
+                          },
+                        },
+                        "3. POSTAĆ STRUKTURY SCHEMATU",
+                      ),
+                      /*#__PURE__*/ React.createElement(
+                        "select",
+                        {
+                          style: {
+                            width: "100%",
+                            padding: "6px",
+                            borderRadius: 5,
+                            border: "1.5px solid #cbd5e1",
+                          },
+                          value: structType,
+                          onChange: (e) => setStructType(e.target.value),
+                        },
+                        /*#__PURE__*/ React.createElement(
+                          "option",
+                          { value: "sop" },
+                          "SOP (Suma iloczynów)",
+                        ),
+                        /*#__PURE__*/ React.createElement(
+                          "option",
+                          { value: "pos" },
+                          "POS (Iloczyn sum)",
+                        ),
+                      ),
+                    ),
+                  ),
+                  /*#__PURE__*/ React.createElement(Gates, {
+                    cover: gateCover,
+                    vs: vs,
+                    type: gtype,
+                    structType: structType,
+                  }),
+                ),
+            ),
+          ),
+        );
+      }
+
+      ReactDOM.createRoot(document.getElementById("root")).render(
+        React.createElement(App),
+      );
+    </script>
+  </body>
 </html>
