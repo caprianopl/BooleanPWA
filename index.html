@@ -339,28 +339,30 @@
       }
 
       const GRP_CLR = [
-        "#e74c3c",
-        "#27ae60",
-        "#2980b9",
-        "#d97706",
-        "#7c3aed",
-        "#0891b2",
-        "#db2777",
-        "#059669",
+        "#ef4444", // red
+        "#22c55e", // green
+        "#3b82f6", // blue
+        "#f59e0b", // amber
+        "#a855f7", // purple
+        "#06b6d4", // cyan
+        "#ec4899", // pink
+        "#14b8a6", // teal
       ];
       const GRP_BG = [
-        "#fde8e8",
-        "#e8fdf0",
-        "#dbeafe",
-        "#fef3c7",
-        "#f5f3ff",
-        "#ecfeff",
-        "#fce7f3",
-        "#d1fae5",
+        "rgba(239, 68, 68, 0.15)",
+        "rgba(34, 197, 94, 0.15)",
+        "rgba(59, 82, 246, 0.15)",
+        "rgba(245, 158, 20, 0.15)",
+        "rgba(168, 85, 247, 0.15)",
+        "rgba(6, 182, 212, 0.15)",
+        "rgba(236, 72, 153, 0.15)",
+        "rgba(20, 184, 166, 0.15)",
       ];
 
-      function KMap({ n, vs, outs, cover, onCellClick }) {
+      function KMap({ n, vs, outs, cover, onCellClick, optimizeTarget }) {
         const cells = useMemo(() => kCells(n), [n]);
+
+        // Mapowanie: indeks mintermu -> tablica indeksów grup z 'cover', do których należy
         const colorMap = useMemo(() => {
           const m = {};
           cover.forEach((pi, i) =>
@@ -370,6 +372,7 @@
           );
           return m;
         }, [cover, n]);
+
         const rLbls =
           n <= 3
             ? ["0", "1"]
@@ -400,140 +403,237 @@
                 : n === 5
                   ? `${vs[2]}${vs[3]}${vs[4]}`
                   : `${vs[3]}${vs[4]}${vs[5]}`;
+
         return /*#__PURE__*/ React.createElement(
           "div",
-          { style: { overflowX: "auto" } },
+          null,
           /*#__PURE__*/ React.createElement(
-            "table",
-            {
-              style: {
-                borderCollapse: "collapse",
-                margin: "8px auto",
-                fontFamily: "monospace",
-              },
-            },
+            "div",
+            { style: { overflowX: "auto" } },
             /*#__PURE__*/ React.createElement(
-              "thead",
-              null,
+              "table",
+              {
+                style: {
+                  borderCollapse: "collapse",
+                  margin: "16px auto",
+                  fontFamily: "monospace",
+                },
+              },
               /*#__PURE__*/ React.createElement(
-                "tr",
+                "thead",
                 null,
                 /*#__PURE__*/ React.createElement(
-                  "td",
-                  {
-                    style: {
-                      padding: "4px 12px",
-                      color: "#94a3b8",
-                      fontSize: 12,
-                      textAlign: "center",
-                    },
-                  },
-                  /*#__PURE__*/ React.createElement("em", null, rVar),
-                  " \\ ",
-                  /*#__PURE__*/ React.createElement("em", null, cVar),
-                ),
-                cLbls.map((l) =>
-                  /*#__PURE__*/ React.createElement(
-                    "th",
-                    {
-                      key: l,
-                      style: {
-                        padding: "4px 16px",
-                        textAlign: "center",
-                        fontSize: 13,
-                        fontWeight: 600,
-                        color: "#334155",
-                      },
-                    },
-                    l,
-                  ),
-                ),
-              ),
-            ),
-            /*#__PURE__*/ React.createElement(
-              "tbody",
-              null,
-              cells.map((row, ri) =>
-                /*#__PURE__*/ React.createElement(
                   "tr",
-                  { key: ri },
+                  null,
                   /*#__PURE__*/ React.createElement(
                     "td",
                     {
                       style: {
-                        padding: "4px 16px",
-                        fontWeight: 600,
+                        padding: "8px 16px",
+                        color: "#64748b",
                         fontSize: 13,
-                        color: "#334155",
                         textAlign: "center",
+                        borderBottom: "2px solid #cbd5e1",
+                        borderRight: "2px solid #cbd5e1",
                       },
                     },
-                    rLbls[ri],
+                    /*#__PURE__*/ React.createElement("strong", null, rVar),
+                    " \\ ",
+                    /*#__PURE__*/ React.createElement("strong", null, cVar),
                   ),
-                  row.map(({ m }) => {
-                    const idxs = colorMap[m] || [];
-                    const val = outs[m];
-                    const bg = idxs.length
-                      ? GRP_BG[idxs[0] % GRP_BG.length]
-                      : val === 1
-                        ? "#f0fdf4"
-                        : val === "x"
-                          ? "#faf5ff"
-                          : "#fff5f5";
-                    const bd = idxs.length
-                      ? `2.5px solid ${GRP_CLR[idxs[0] % GRP_CLR.length]}`
-                      : "1.5px solid #cbd5e1";
-                    return /*#__PURE__*/ React.createElement(
-                      "td",
+                  cLbls.map((l) =>
+                    /*#__PURE__*/ React.createElement(
+                      "th",
                       {
-                        key: m,
-                        onClick: () => onCellClick && onCellClick(m),
+                        key: l,
                         style: {
-                          width: 60,
-                          height: 60,
+                          padding: "8px 16px",
                           textAlign: "center",
-                          verticalAlign: "middle",
-                          background: bg,
-                          border: bd,
-                          position: "relative",
-                          cursor: onCellClick ? "pointer" : "default",
+                          fontSize: 14,
+                          fontWeight: 700,
+                          color: "#334155",
+                          borderBottom: "2px solid #cbd5e1",
                         },
                       },
-                      /*#__PURE__*/ React.createElement(
-                        "span",
+                      l,
+                    ),
+                  ),
+                ),
+              ),
+              /*#__PURE__*/ React.createElement(
+                "tbody",
+                null,
+                cells.map((row, ri) =>
+                  /*#__PURE__*/ React.createElement(
+                    "tr",
+                    { key: ri },
+                    /*#__PURE__*/ React.createElement(
+                      "td",
+                      {
+                        style: {
+                          padding: "8px 16px",
+                          fontWeight: 700,
+                          fontSize: 14,
+                          color: "#334155",
+                          textAlign: "center",
+                          borderRight: "2px solid #cbd5e1",
+                        },
+                      },
+                      rLbls[ri],
+                    ),
+                    row.map(({ m }) => {
+                      const idxs = colorMap[m] || [];
+                      const val = outs[m];
+
+                      // Domyślne kolory tła dla stanów bazowych
+                      let bg = "white";
+                      if (val === 1) bg = "#f0fdf4";
+                      else if (val === "x") bg = "#faf5ff";
+                      else bg = "#fff5f5";
+
+                      // Jeśli komórka należy do pętli, miksujemy warstwy teł (obsługa nakładania pętli)
+                      let boxShadow = "none";
+                      let border = "1px solid #cbd5e1";
+
+                      if (idxs.length > 0) {
+                        // Bierzemy kolor pierwszej grupy jako główne tło, resztę jako cienie wewnętrzne
+                        bg = GRP_BG[idxs[0] % GRP_BG.length];
+                        const borders = idxs
+                          .map(
+                            (idx) =>
+                              `inset 0 0 0 3px ${GRP_CLR[idx % GRP_CLR.length]}`,
+                          )
+                          .join(", ");
+                        boxShadow = borders;
+                        border = `1px solid ${GRP_CLR[idxs[0] % GRP_CLR.length]}`;
+                      }
+
+                      return /*#__PURE__*/ React.createElement(
+                        "td",
                         {
+                          key: m,
+                          onClick: () => onCellClick && onCellClick(m),
                           style: {
-                            position: "absolute",
-                            top: 2,
-                            left: 4,
-                            fontSize: 9,
-                            color: "#94a3b8",
+                            width: 65,
+                            height: 65,
+                            textAlign: "center",
+                            verticalAlign: "middle",
+                            background: bg,
+                            border: border,
+                            boxShadow: boxShadow,
+                            position: "relative",
+                            cursor: onCellClick ? "pointer" : "default",
+                            transition: "all 0.15s ease",
                           },
                         },
-                        m,
-                      ),
-                      /*#__PURE__*/ React.createElement(
-                        "span",
-                        {
-                          style: {
-                            fontSize: 20,
-                            fontWeight: 700,
-                            color:
-                              val === 1
-                                ? "#15803d"
-                                : val === "x"
-                                  ? "#7c3aed"
-                                  : "#b91c1c",
+                        /*#__PURE__*/ React.createElement(
+                          "span",
+                          {
+                            style: {
+                              position: "absolute",
+                              top: 3,
+                              left: 5,
+                              fontSize: 10,
+                              color: "#94a3b8",
+                            },
                           },
-                        },
-                        String(val),
-                      ),
-                    );
-                  }),
+                          m,
+                        ),
+                        /*#__PURE__*/ React.createElement(
+                          "span",
+                          {
+                            style: {
+                              fontSize: 22,
+                              fontWeight: 800,
+                              color:
+                                val === 1
+                                  ? "#16a34a"
+                                  : val === "x"
+                                    ? "#7c3aed"
+                                    : "#dc2626",
+                            },
+                          },
+                          String(val),
+                        ),
+                      );
+                    }),
+                  ),
                 ),
               ),
             ),
           ),
+          // LEGENDY GRUPOWANIA (WIZUALIZACJA MINIMALIZACJI)
+          cover.length > 0 &&
+            /*#__PURE__*/ React.createElement(
+              "div",
+              {
+                style: {
+                  marginTop: 20,
+                  padding: 14,
+                  background: "#f8fafc",
+                  borderRadius: 8,
+                  border: "1.5px solid #e2e8f0",
+                },
+              },
+              /*#__PURE__*/ React.createElement(
+                "div",
+                {
+                  style: {
+                    fontSize: 13,
+                    fontWeight: 700,
+                    color: "#475569",
+                    marginBottom: 10,
+                  },
+                },
+                `WYBRANE GRUPY (OPTYMALIZACJA Z ${optimizeTarget === "1" ? "JEDYNEK - SOP" : "ZER - POS"}):`,
+              ),
+              /*#__PURE__*/ React.createElement(
+                "div",
+                { style: { display: "flex", flexDirection: "column", gap: 8 } },
+                cover.map((pi, i) => {
+                  const color = GRP_CLR[i % GRP_CLR.length];
+                  const exprFmt =
+                    optimizeTarget === "1"
+                      ? fmtSOP(pi.term, vs)
+                      : fmtPOS(pi.term, vs);
+                  return /*#__PURE__*/ React.createElement(
+                    "div",
+                    {
+                      key: i,
+                      style: {
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 12,
+                        fontSize: 14,
+                      },
+                    },
+                    /*#__PURE__*/ React.createElement("div", {
+                      style: {
+                        width: 16,
+                        height: 16,
+                        borderRadius: 4,
+                        backgroundColor: color,
+                        boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+                      },
+                    }),
+                    /*#__PURE__*/ React.createElement(
+                      "div",
+                      { style: { fontFamily: "monospace", flexGrow: 1 } },
+                      /*#__PURE__*/ React.createElement(
+                        "strong",
+                        { style: { color: "#1e293b", fontSize: 15 } },
+                        exprFmt,
+                      ),
+                      /*#__PURE__*/ React.createElement(
+                        "span",
+                        { style: { color: "#64748b", marginLeft: 10 } },
+                        `→ maska: ${pi.term} | obejmuje komórki: [${pi.mts.join(", ")}]`,
+                      ),
+                    ),
+                  );
+                }),
+              ),
+            ),
         );
       }
 
@@ -972,7 +1072,6 @@
 
       function App() {
         const [nv, setNv] = useState(3);
-        // Zmiana domyślnych nazw zmiennych: A B C D E F → x1 x2 x3 x4 x5 x6
         const [names, setNames] = useState([
           "x1",
           "x2",
@@ -991,8 +1090,8 @@
         const [tab, setTab] = useState("tt");
 
         const [gtype, setGtype] = useState("and-or");
-        const [optimizeTarget, setOptimizeTarget] = useState("1"); // "1" -> 1 (SOP), "0" -> 0 (POS)
-        const [structType, setStructType] = useState("sop"); // "sop" -> SOP, "pos" -> POS
+        const [optimizeTarget, setOptimizeTarget] = useState("1"); // "1" -> SOP, "0" -> POS
+        const [structType, setStructType] = useState("sop");
 
         const vs = useMemo(() => names.slice(0, nv), [names, nv]);
 
@@ -1069,12 +1168,10 @@
               ? "0"
               : posR.cover.map((pi) => fmtPOS(pi.term, vs)).join(" · ") || "0";
 
-        // Wybór pokrycia na podstawie jawnie ustawionego celu optymalizacji
         const gateCover = useMemo(() => {
           return optimizeTarget === "1" ? sopR.cover : posR.cover;
         }, [optimizeTarget, sopR.cover, posR.cover]);
 
-        // Swobodne przełączanie: ustawia tylko sugestię, ale niczego nie blokuje!
         const handleGtypeChange = (type) => {
           setGtype(type);
           if (type === "nand") {
@@ -1308,6 +1405,45 @@
                   ),
                 ),
               ),
+              /*#__PURE__*/ React.createElement(
+                "div",
+                null,
+                /*#__PURE__*/ React.createElement(
+                  "div",
+                  {
+                    style: {
+                      fontSize: 12,
+                      color: "#64748b",
+                      marginBottom: 5,
+                      fontWeight: 600,
+                    },
+                  },
+                  "OPTYMALIZACJA WIDOKU MAPY KOŁO",
+                ),
+                /*#__PURE__*/ React.createElement(
+                  "select",
+                  {
+                    style: {
+                      padding: "8px 12px",
+                      borderRadius: 7,
+                      border: "1.5px solid #cbd5e1",
+                      fontSize: 14,
+                    },
+                    value: optimizeTarget,
+                    onChange: (e) => setOptimizeTarget(e.target.value),
+                  },
+                  /*#__PURE__*/ React.createElement(
+                    "option",
+                    { value: "1" },
+                    "Grupuj jedynki (SOP)",
+                  ),
+                  /*#__PURE__*/ React.createElement(
+                    "option",
+                    { value: "0" },
+                    "Grupuj zera (POS)",
+                  ),
+                ),
+              ),
             ),
           ),
           /*#__PURE__*/ React.createElement(
@@ -1349,7 +1485,8 @@
                   n: Math.min(nv, 4),
                   vs: vs,
                   outs: comp.outs,
-                  cover: [],
+                  cover: gateCover,
+                  optimizeTarget: optimizeTarget,
                   onCellClick: (m) =>
                     setKmIn((p) => {
                       const c = p[m] ?? 0;
@@ -1359,7 +1496,10 @@
                 /*#__PURE__*/ React.createElement(
                   "button",
                   {
-                    onClick: () => setKmIn({}),
+                    onClick: () => {
+                      setKmIn({});
+                      setTtIn({});
+                    },
                     style: {
                       ...btn(false, "#ef4444"),
                       marginTop: 10,
@@ -1576,6 +1716,7 @@
                   vs: vs,
                   outs: comp.outs,
                   cover: gateCover,
+                  optimizeTarget: optimizeTarget,
                 }),
               tab === "gt" &&
                 /*#__PURE__*/ React.createElement(
