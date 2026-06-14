@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Bool Kombajn (Poprawiony)</title>
+    <title>Bool Kombajn — Pełna Wersja</title>
     <meta name="theme-color" content="#1e40af" />
     <style>
       * {
@@ -14,6 +14,10 @@
         padding: 0;
         background: #f1f5f9;
         font-family: system-ui, sans-serif;
+        color: #1e293b;
+      }
+      button {
+        cursor: pointer;
       }
       @media print {
         body {
@@ -39,7 +43,7 @@
       const { useState, useMemo } = React;
 
       // ==========================================
-      // PARSER WYRAŻEŃ BOOLOWSKICH
+      // PARSER WYRAŻEŃ BOOLOWSKICH (Oryginalny)
       // ==========================================
       function lex(expr, names) {
         const sorted = [...names].sort((a, b) => b.length - a.length);
@@ -168,7 +172,7 @@
       }
 
       // ==========================================
-      // NAPRAWIONY ALGORYTM QUINE'A-McCLUSKEYA
+      // NAPRAWIONY I POPRAWIONY ALGORYTM QMC
       // ==========================================
       const d2b = (n, bits) => n.toString(2).padStart(bits, "0");
 
@@ -188,10 +192,10 @@
 
       function runQMC(mts, dcs, n) {
         if (!mts.length)
-          return { pis: [], steps: [], essential: [], optional: [], cover: [] };
-
+          return { pis: [], essential: [], optional: [], cover: [] };
         const all = [...new Set([...mts, ...dcs])];
-        // POPRAWKA BUBEL: Każda komórka (nawet don't care) musi pamiętać swój własny numer mintermu przy fuzji!
+
+        // POPRAWKA BUBEL: Stany don't care zachowują swój numer indeksu komórki
         let tm = Object.fromEntries(all.map((m) => [d2b(m, n), [m]]));
         let cur = Object.keys(tm);
         const pis = [];
@@ -218,7 +222,6 @@
 
           cur.forEach((t) => {
             if (!used.has(t) && !pis.find((p) => p.term === t)) {
-              // Interesują nas tylko te komórki z grupy, które są faktycznymi celami optymalizacji (bez porzuconych X)
               const coveredMints = (tm[t] || []).filter((m) => mts.includes(m));
               pis.push({ term: t, allCells: tm[t] || [], mts: coveredMints });
             }
@@ -229,7 +232,7 @@
           cur = Object.keys(ntm);
         }
 
-        // ANALIZA KROKOWA DLA KORZYŚCI UŻYTKOWNIKA (Wyznaczanie Essential i Optional)
+        // Analiza krokowa: grupy niezbędne i opcjonalne
         const covCount = {};
         mts.forEach((m) => {
           covCount[m] = [];
@@ -257,7 +260,6 @@
             !essentialIndices.has(i) && pis[i].mts.some((m) => mts.includes(m)),
         );
 
-        // Wyznaczenie optymalnego pokrycia końcowego
         const selIndices = new Set(essentialIndices);
         const currentRem = new Set(remMts);
 
@@ -278,14 +280,15 @@
           pis[bestIdx].mts.forEach((m) => currentRem.delete(m));
         }
 
-        const cover = [...selIndices].map((i) => pis[i]);
-
-        return { pis, essential, optional, cover };
+        return {
+          pis,
+          essential,
+          optional,
+          cover: [...selIndices].map((i) => pis[i]),
+        };
       }
 
-      // ==========================================
-      // FORMATOWANIE WYRAŻEŃ
-      // ==========================================
+      // Formatowanie
       const fmtSOP = (term, vs) =>
         [...term]
           .map((c, i) => (c === "1" ? vs[i] : c === "0" ? vs[i] + "'" : ""))
@@ -309,9 +312,7 @@
           .join("+") +
         ")";
 
-      // ==========================================
-      // MAPA KARNAUGH (STRUKTURA I INDEKSY)
-      // ==========================================
+      // Siatki mapy Karnaugh
       const G4 = [0, 1, 3, 2];
       const G8 = [0, 1, 3, 2, 6, 7, 5, 4];
       function kCells(n) {
@@ -348,17 +349,18 @@
         "#14b8a6",
       ];
       const GRP_BG = [
-        "rgba(239, 68, 68, 0.15)",
-        "rgba(34, 197, 94, 0.15)",
-        "rgba(59, 82, 246, 0.15)",
-        "rgba(245, 158, 20, 0.15)",
-        "rgba(168, 85, 247, 0.15)",
-        "rgba(6, 182, 212, 0.15)",
-        "rgba(236, 72, 153, 0.15)",
-        "rgba(20, 184, 166, 0.15)",
+        "rgba(239, 68, 68, 0.12)",
+        "rgba(34, 197, 94, 0.12)",
+        "rgba(59, 82, 246, 0.12)",
+        "rgba(245, 158, 20, 0.12)",
+        "rgba(168, 85, 247, 0.12)",
+        "rgba(6, 182, 212, 0.12)",
+        "rgba(236, 72, 153, 0.12)",
+        "rgba(20, 184, 166, 0.12)",
       ];
 
-      function KMap({ n, vs, outs, cover, onCellClick, optimizeTarget }) {
+      // KOMPONENT: MAPA KARNAUGH
+      function KMap({ n, vs, outs, cover, onCellClick }) {
         const cells = useMemo(() => kCells(n), [n]);
         const colorMap = useMemo(() => {
           const m = {};
@@ -368,7 +370,7 @@
             });
           });
           return m;
-        }, [cover, n]);
+        }, [cover]);
 
         const rLbls =
           n <= 3
@@ -403,152 +405,146 @@
 
         return React.createElement(
           "div",
-          null,
+          { style: { overflowX: "auto" } },
           React.createElement(
-            "div",
-            { style: { overflowX: "auto" } },
-            React.createElement(
-              "table",
-              {
-                style: {
-                  borderCollapse: "collapse",
-                  margin: "16px auto",
-                  fontFamily: "monospace",
-                },
+            "table",
+            {
+              style: {
+                borderCollapse: "collapse",
+                margin: "16px auto",
+                fontFamily: "monospace",
               },
+            },
+            React.createElement(
+              "thead",
+              null,
               React.createElement(
-                "thead",
+                "tr",
                 null,
                 React.createElement(
+                  "td",
+                  {
+                    style: {
+                      padding: "8px 16px",
+                      color: "#64748b",
+                      fontSize: 13,
+                      textAlign: "center",
+                      borderBottom: "2px solid #cbd5e1",
+                      borderRight: "2px solid #cbd5e1",
+                    },
+                  },
+                  React.createElement("strong", null, rVar),
+                  " \\ ",
+                  React.createElement("strong", null, cVar),
+                ),
+                cLbls.map((l) =>
+                  React.createElement(
+                    "th",
+                    {
+                      key: l,
+                      style: {
+                        padding: "8px 16px",
+                        textAlign: "center",
+                        fontSize: 14,
+                        color: "#334155",
+                        borderBottom: "2px solid #cbd5e1",
+                      },
+                    },
+                    l,
+                  ),
+                ),
+              ),
+            ),
+            React.createElement(
+              "tbody",
+              null,
+              cells.map((row, ri) =>
+                React.createElement(
                   "tr",
-                  null,
+                  { key: ri },
                   React.createElement(
                     "td",
                     {
                       style: {
                         padding: "8px 16px",
-                        color: "#64748b",
-                        fontSize: 13,
+                        fontWeight: "700",
+                        fontSize: 14,
+                        color: "#334155",
                         textAlign: "center",
-                        borderBottom: "2px solid #cbd5e1",
                         borderRight: "2px solid #cbd5e1",
                       },
                     },
-                    React.createElement("strong", null, rVar),
-                    " \\ ",
-                    React.createElement("strong", null, cVar),
+                    rLbls[ri],
                   ),
-                  cLbls.map((l) =>
-                    React.createElement(
-                      "th",
-                      {
-                        key: l,
-                        style: {
-                          padding: "8px 16px",
-                          textAlign: "center",
-                          fontSize: 14,
-                          fontWeight: 700,
-                          color: "#334155",
-                          borderBottom: "2px solid #cbd5e1",
-                        },
-                      },
-                      l,
-                    ),
-                  ),
-                ),
-              ),
-              React.createElement(
-                "tbody",
-                null,
-                cells.map((row, ri) =>
-                  React.createElement(
-                    "tr",
-                    { key: ri },
-                    React.createElement(
+                  row.map(({ m }) => {
+                    const idxs = colorMap[m] || [];
+                    const val = outs[m];
+                    let bg = "white";
+                    if (val === 1) bg = "#f0fdf4";
+                    else if (val === "x" || val === "X") bg = "#faf5ff";
+                    else bg = "#fff5f5";
+
+                    let boxShadow = "none";
+                    let border = "1px solid #cbd5e1";
+
+                    if (idxs.length > 0) {
+                      bg = GRP_BG[idxs[0] % GRP_BG.length];
+                      boxShadow = idxs
+                        .map(
+                          (idx) =>
+                            `inset 0 0 0 3px ${GRP_CLR[idx % GRP_CLR.length]}`,
+                        )
+                        .join(", ");
+                      border = `1px solid ${GRP_CLR[idxs[0] % GRP_CLR.length]}`;
+                    }
+
+                    return React.createElement(
                       "td",
                       {
+                        key: m,
+                        onClick: () => onCellClick(m),
                         style: {
-                          padding: "8px 16px",
-                          fontWeight: 700,
-                          fontSize: 14,
-                          color: "#334155",
+                          width: 60,
+                          height: 60,
                           textAlign: "center",
-                          borderRight: "2px solid #cbd5e1",
+                          background: bg,
+                          border: border,
+                          boxShadow: boxShadow,
+                          position: "relative",
+                          cursor: "pointer",
                         },
                       },
-                      rLbls[ri],
-                    ),
-                    row.map(({ m }) => {
-                      const idxs = colorMap[m] || [];
-                      const val = outs[m];
-                      let bg = "white";
-                      if (val === 1) bg = "#f0fdf4";
-                      else if (val === "x") bg = "#faf5ff";
-                      else bg = "#fff5f5";
-
-                      let boxShadow = "none";
-                      let border = "1px solid #cbd5e1";
-
-                      if (idxs.length > 0) {
-                        bg = GRP_BG[idxs[0] % GRP_BG.length];
-                        boxShadow = idxs
-                          .map(
-                            (idx) =>
-                              `inset 0 0 0 3px ${GRP_CLR[idx % GRP_CLR.length]}`,
-                          )
-                          .join(", ");
-                        border = `1px solid ${GRP_CLR[idxs[0] % GRP_CLR.length]}`;
-                      }
-
-                      return React.createElement(
-                        "td",
+                      React.createElement(
+                        "span",
                         {
-                          key: m,
-                          onClick: () => onCellClick && onCellClick(m),
                           style: {
-                            width: 65,
-                            height: 65,
-                            textAlign: "center",
-                            verticalAlign: "middle",
-                            background: bg,
-                            border: border,
-                            boxShadow: boxShadow,
-                            position: "relative",
-                            cursor: onCellClick ? "pointer" : "default",
+                            position: "absolute",
+                            top: 2,
+                            left: 4,
+                            fontSize: 9,
+                            color: "#94a3b8",
                           },
                         },
-                        React.createElement(
-                          "span",
-                          {
-                            style: {
-                              position: "absolute",
-                              top: 3,
-                              left: 5,
-                              fontSize: 10,
-                              color: "#94a3b8",
-                            },
+                        m,
+                      ),
+                      React.createElement(
+                        "span",
+                        {
+                          style: {
+                            fontSize: 18,
+                            fontWeight: "800",
+                            color:
+                              val === 1
+                                ? "#16a34a"
+                                : val === "x" || val === "X"
+                                  ? "#7c3aed"
+                                  : "#dc2626",
                           },
-                          m,
-                        ),
-                        React.createElement(
-                          "span",
-                          {
-                            style: {
-                              fontSize: 22,
-                              fontWeight: 800,
-                              color:
-                                val === 1
-                                  ? "#16a34a"
-                                  : val === "x"
-                                    ? "#7c3aed"
-                                    : "#dc2626",
-                            },
-                          },
-                          String(val),
-                        ),
-                      );
-                    }),
-                  ),
+                        },
+                        String(val),
+                      ),
+                    );
+                  }),
                 ),
               ),
             ),
@@ -556,193 +552,189 @@
         );
       }
 
-      // ==========================================
-      // NOWY KOMPONENT: KROKOWY OPIS BRAMKOWY
-      // ==========================================
-      function ProcessLogger({ qmcResult, vs, optimizeTarget }) {
-        const { pis, essential, optional, cover } = qmcResult;
-        const targetName =
-          optimizeTarget === "1" ? "JEDYNEK (SOP)" : "ZER (POS)";
-        const formatTerm = (t) =>
-          optimizeTarget === "1" ? fmtSOP(t, vs) : fmtPOS(t, vs);
-
+      // KOMPONENT: PROCES SPISYWANIA Z KARNAUGH KROK PO KROKU
+      function StepLogger({ sopR, posR, vs }) {
         return React.createElement(
           "div",
           {
             style: {
               marginTop: 24,
-              padding: 18,
+              padding: 16,
               background: "#f8fafc",
-              borderRadius: 10,
-              border: "2px solid #e2e8f0",
+              borderRadius: 8,
+              border: "1px solid #e2e8f0",
             },
           },
           React.createElement(
             "h3",
-            { style: { color: "#1e3a8a", margin: "0 0 12px 0", fontSize: 16 } },
-            `📝 PROCEDURA SPISYWANIA I MINIMALIZACJI DLA ${targetName}`,
+            {
+              style: {
+                color: "#1e3a8a",
+                margin: "0 0 16px 0",
+                borderBottom: "2px solid #cbd5e1",
+                paddingBottom: 6,
+              },
+            },
+            "📝 Pełna procedura spisywania z mapy Karnaugh po kolei:",
           ),
 
           React.createElement(
             "div",
-            { style: { marginBottom: 14 } },
+            { style: { marginBottom: 20 } },
+            React.createElement(
+              "h4",
+              { style: { color: "#16a34a", margin: "0 0 6px 0" } },
+              "1. Metoda SOP (Suma Iloczynów - Spisywanie Jedynek)",
+            ),
             React.createElement(
               "strong",
-              null,
-              "Krok 1: Wyznaczenie wszystkich grup maksymalnych (Implikanty prymarne):",
+              { style: { fontSize: 13 } },
+              "Wszystkie możliwe grupy maksymalne (Implikanty prymarne):",
             ),
             React.createElement(
               "ul",
-              { style: { margin: "6px 0", paddingLeft: 20, fontSize: 13 } },
-              pis.map((p, i) =>
+              {
+                style: {
+                  fontSize: 13,
+                  fontFamily: "monospace",
+                  paddingLeft: 20,
+                  margin: "4px 0",
+                },
+              },
+              sopR.pis.map((p, i) =>
                 React.createElement(
                   "li",
-                  {
-                    key: i,
-                    style: { fontFamily: "monospace", marginBottom: 3 },
-                  },
-                  `Grupa [${formatTerm(p.term)}] → Maska: ${p.term} | Obejmuje komórki: [${p.allCells.join(", ")}]`,
+                  { key: i },
+                  `Grupa [ ${fmtSOP(p.term, vs)} ] → maska bitowa: ${p.term} obejmuje komórki: [${p.allCells.join(", ")}]`,
                 ),
               ),
             ),
-          ),
-
-          React.createElement(
-            "div",
-            { style: { marginBottom: 14 } },
             React.createElement(
               "strong",
-              null,
-              "Krok 2: Znalezienie grup niezbędnych (Essential Prime Implicants):",
+              { style: { fontSize: 13 } },
+              "Grupy Niezbędne (Essential Prime Implicants):",
             ),
             React.createElement(
-              "p",
-              { style: { margin: "4px 0", fontSize: 13, color: "#475569" } },
-              "Są to grupy, które jako jedyne pokrywają co najmniej jeden wymagany stan bazowy.",
-            ),
-            essential.length === 0
-              ? React.createElement(
-                  "div",
-                  {
-                    style: {
-                      color: "#b45309",
-                      fontSize: 13,
-                      fontWeight: "bold",
-                    },
-                  },
-                  "Brak wyraźnych grup niezbędnych. Wybór będzie oparty na minimalizacji pokrycia.",
-                )
-              : React.createElement(
-                  "ul",
-                  {
-                    style: {
-                      margin: "6px 0",
-                      paddingLeft: 20,
-                      fontSize: 13,
-                      color: "#16a34a",
-                    },
-                  },
-                  essential.map((p, i) =>
+              "ul",
+              {
+                style: {
+                  fontSize: 13,
+                  fontFamily: "monospace",
+                  paddingLeft: 20,
+                  margin: "4px 0",
+                  color: "#15803d",
+                },
+              },
+              sopR.essential.length
+                ? sopR.essential.map((p, i) =>
                     React.createElement(
                       "li",
-                      { key: i, style: { fontFamily: "monospace" } },
-                      `WYBRANA (Niezbędna): [${formatTerm(p.term)}] ponieważ samodzielnie zabezpiecza stany.`,
+                      { key: i },
+                      `Niezbędna grupa: [ ${fmtSOP(p.term, vs)} ]`,
                     ),
-                  ),
-                ),
-          ),
-
-          React.createElement(
-            "div",
-            { style: { marginBottom: 14 } },
-            React.createElement(
-              "strong",
-              null,
-              "Krok 3: Analiza grup opcjonalnych / uzupełniających:",
-            ),
-            optional.length === 0
-              ? React.createElement(
-                  "div",
-                  { style: { fontSize: 13, color: "#64748b" } },
-                  "Brak dodatkowych grup (Wszystkie stany zostały już optymalnie nakryte).",
-                )
-              : React.createElement(
-                  "ul",
-                  {
-                    style: {
-                      margin: "6px 0",
-                      paddingLeft: 20,
-                      fontSize: 13,
-                      color: "#475569",
-                    },
-                  },
-                  optional.map((p, i) => {
-                    const isSelected = cover.some((c) => c.term === p.term);
-                    return React.createElement(
-                      "li",
-                      {
-                        key: i,
-                        style: {
-                          fontFamily: "monospace",
-                          textDecoration: isSelected ? "none" : "line-through",
-                          opacity: isSelected ? 1 : 0.5,
-                        },
-                      },
-                      isSelected
-                        ? `[Użyta jako dopełnienie] → Obejmuje: [${p.mts.join(", ")}]`
-                        : `[Odrzucona - nadmiarowa] → Obejmuje: [${p.mts.join(", ")}]`,
-                    );
-                  }),
-                ),
-          ),
-          React.createElement("hr", {
-            style: {
-              border: "none",
-              borderTop: "1px solid #cbd5e1",
-              margin: "12px 0",
-            },
-          }),
-          React.createElement(
-            "div",
-            null,
-            React.createElement(
-              "strong",
-              null,
-              "Krok 4: Postać końcowa funkcji po syntezie logicznej:",
+                  )
+                : React.createElement("li", null, "Brak grup niezbędnych"),
             ),
             React.createElement(
               "div",
               {
                 style: {
+                  background: "#f0fdf4",
+                  padding: 8,
+                  borderRadius: 4,
                   fontFamily: "monospace",
-                  fontSize: 16,
-                  color: "#1e40af",
-                  marginTop: 6,
-                  background: "#eff6ff",
-                  padding: 10,
-                  borderRadius: 6,
                   fontWeight: "bold",
+                  marginTop: 4,
                 },
               },
-              optimizeTarget === "1"
-                ? "f = " +
-                    (cover.map((p) => formatTerm(p.term)).join(" + ") || "0")
-                : "f = " +
-                    (cover.map((p) => formatTerm(p.term)).join(" · ") || "1"),
+              "SOP (Po minimalizacji): f = " +
+                (sopR.cover.map((p) => fmtSOP(p.term, vs)).join(" + ") || "0"),
+            ),
+          ),
+
+          React.createElement(
+            "div",
+            null,
+            React.createElement(
+              "h4",
+              { style: { color: "#dc2626", margin: "0 0 6px 0" } },
+              "2. Metoda POS (Iloczyn Sum - Spisywanie Zer)",
+            ),
+            React.createElement(
+              "strong",
+              { style: { fontSize: 13 } },
+              "Wszystkie możliwe grupy maksymalne (dla Zer):",
+            ),
+            React.createElement(
+              "ul",
+              {
+                style: {
+                  fontSize: 13,
+                  fontFamily: "monospace",
+                  paddingLeft: 20,
+                  margin: "4px 0",
+                },
+              },
+              posR.pis.map((p, i) =>
+                React.createElement(
+                  "li",
+                  { key: i },
+                  `Grupa [ ${fmtPOS(p.term, vs)} ] → maska bitowa: ${p.term} obejmuje komórki zerowe: [${p.allCells.join(", ")}]`,
+                ),
+              ),
+            ),
+            React.createElement(
+              "strong",
+              { style: { fontSize: 13 } },
+              "Grupy Niezbędne (dla Zer):",
+            ),
+            React.createElement(
+              "ul",
+              {
+                style: {
+                  fontSize: 13,
+                  fontFamily: "monospace",
+                  paddingLeft: 20,
+                  margin: "4px 0",
+                  color: "#991b1b",
+                },
+              },
+              posR.essential.length
+                ? posR.essential.map((p, i) =>
+                    React.createElement(
+                      "li",
+                      { key: i },
+                      `Niezbędna grupa zer: [ ${fmtPOS(p.term, vs)} ]`,
+                    ),
+                  )
+                : React.createElement("li", null, "Brak grup niezbędnych"),
+            ),
+            React.createElement(
+              "div",
+              {
+                style: {
+                  background: "#fff5f5",
+                  padding: 8,
+                  borderRadius: 4,
+                  fontFamily: "monospace",
+                  fontWeight: "bold",
+                  marginTop: 4,
+                },
+              },
+              "POS (Po minimalizacji): f = " +
+                (posR.cover.map((p) => fmtPOS(p.term, vs)).join(" · ") || "1"),
             ),
           ),
         );
       }
 
-      // ==========================================
-      // SCHEMAT BRAMKOWY (SVG)
-      // ==========================================
+      // KOMPONENT: SCHEMATY BRAMKOWE (Oryginalny)
       function Gates({ cover, vs, type, structType }) {
         if (!cover.length)
           return React.createElement(
             "div",
-            { style: { padding: 24, color: "#94a3b8", textAlign: "center" } },
-            "Brak danych do schematu.",
+            { style: { padding: 16, color: "#94a3b8" } },
+            "Brak składników do narysowania schematu.",
           );
         const isPOS = structType === "pos";
         const terms = cover.map((pi) => {
@@ -772,14 +764,14 @@
           INV_W = 34,
           INV_H = 24,
           dotR = 6;
-        const X_LBL = 18,
-          X_INV = 60,
+        const X_LBL = 15,
+          X_INV = 55,
           X1 = X_INV + INV_W + 90,
           X2 = X1 + GW + 140;
         const NV = vs.length,
           NR = terms.length;
-        const VAR_SPACING = Math.max(44, Math.min(60, 320 / Math.max(NV, 1)));
-        const VGAP = Math.max(68, Math.min(90, 380 / Math.max(NR, 1)));
+        const VAR_SPACING = Math.max(40, Math.min(60, 320 / Math.max(NV, 1)));
+        const VGAP = Math.max(60, Math.min(90, 380 / Math.max(NR, 1)));
 
         const varY = Array.from({ length: NV }, (_, i) => 30 + i * VAR_SPACING);
         const rowY = terms.map((_, i) => 30 + i * VGAP);
@@ -816,8 +808,8 @@
                 key: k(),
                 x: X_LBL,
                 y: cy + 5,
-                fontSize: 14,
-                fontFamily: "serif",
+                fontSize: 13,
+                fontFamily: "monospace",
                 fontWeight: "700",
               },
               v,
@@ -876,10 +868,10 @@
                 key: k(),
                 x1: X_LBL + 16,
                 y1: cy,
-                x2: X_INV + INV_W + 14,
+                x2: X_INV + INV_W + 10,
                 y2: cy,
-                stroke: "#475569",
-                strokeDasharray: "4 2",
+                stroke: "#94a3b8",
+                strokeDasharray: "2 2",
               }),
             );
           }
@@ -897,10 +889,10 @@
               y: gy,
               width: GW,
               height: GH,
-              rx: 6,
+              rx: 4,
               fill: "#dbeafe",
               stroke: "#3b82f6",
-              strokeWidth: 2,
+              strokeWidth: 1.5,
             }),
           );
           els.push(
@@ -909,9 +901,9 @@
               {
                 key: k(),
                 x: gx + GW / 2,
-                y: gy + GH / 2 + 5,
+                y: gy + GH / 2 + 4,
                 textAnchor: "middle",
-                fontSize: 11,
+                fontSize: 10,
                 fontWeight: "700",
               },
               n1,
@@ -931,14 +923,14 @@
 
           term.lits.forEach((lit, li) => {
             const wy = gy + (GH * (li + 1)) / (nin + 1);
+            const vx = lit.neg ? X_INV + INV_W + 10 : X_INV + INV_W + 10;
+            const vy = varY[lit.vi] + INV_H / 2;
             els.push(
-              React.createElement("line", {
+              React.createElement("path", {
                 key: k(),
-                x1: gx - 45,
-                y1: wy,
-                x2: gx,
-                y2: wy,
+                d: `M${vx},${vy} H${gx - 25} V${wy} H${gx}`,
                 stroke: "#475569",
+                fill: "none",
               }),
             );
           });
@@ -962,10 +954,10 @@
             y: outY,
             width: GW,
             height: GH,
-            rx: 6,
+            rx: 4,
             fill: "#fef3c7",
             stroke: "#d97706",
-            strokeWidth: 2,
+            strokeWidth: 1.5,
           }),
         );
         els.push(
@@ -974,26 +966,36 @@
             {
               key: k(),
               x: X2 + GW / 2,
-              y: outY + GH / 2 + 5,
+              y: outY + GH / 2 + 4,
               textAnchor: "middle",
-              fontSize: 11,
+              fontSize: 10,
               fontWeight: "700",
             },
             n2,
           ),
         );
+        if (hasDotSecond)
+          els.push(
+            React.createElement("circle", {
+              key: k(),
+              cx: X2 + GW + dotR,
+              cy: outY + GH / 2,
+              r: dotR,
+              fill: "white",
+              stroke: "#d97706",
+            }),
+          );
 
-        const fX = X2 + GW + 10;
+        const fX = hasDotSecond ? X2 + GW + dotR * 2 + 10 : X2 + GW + 10;
         els.push(
           React.createElement(
             "text",
             {
               key: k(),
-              x: fX + 15,
-              y: outY + GH / 2 + 6,
-              fontSize: 18,
+              x: fX,
+              y: outY + GH / 2 + 5,
+              fontSize: 16,
               fontWeight: "bold",
-              fill: "#15803d",
             },
             "f",
           ),
@@ -1001,14 +1003,20 @@
 
         return React.createElement(
           "div",
-          { style: { overflowX: "auto" } },
-          React.createElement("svg", { width: fX + 50, height: SVG_H }, els),
+          {
+            style: {
+              overflowX: "auto",
+              background: "#f8fafc",
+              padding: 12,
+              borderRadius: 6,
+              border: "1px solid #e2e8f0",
+            },
+          },
+          React.createElement("svg", { width: fX + 40, height: SVG_H }, els),
         );
       }
 
-      // ==========================================
-      // GŁÓWNY PANEL APLIKACJI (APP)
-      // ==========================================
+      // MAIN APP COMPONENT
       function App() {
         const [nv, setNv] = useState(4);
         const [names, setNames] = useState([
@@ -1022,7 +1030,7 @@
         const [mode, setMode] = useState("km");
         const [expr, setExpr] = useState("");
         const [ttIn, setTtIn] = useState({});
-        // PRESET DANYCH Z TWOJEGO SCREENSHOTU (błąd narożnika 0,1,2,4,8,10,14,15):
+        // Ładowanie domyślnych danych z Twojego screenshotu dla testu (błąd narożnika)
         const [kmIn, setKmIn] = useState({
           0: "x",
           1: 1,
@@ -1036,10 +1044,8 @@
         const [mtStr, setMtStr] = useState("");
         const [mxStr, setMxStr] = useState("");
         const [dcStr, setDcStr] = useState("");
-        const [tab, setTab] = useState("km");
 
         const [gtype, setGtype] = useState("and-or");
-        const [optimizeTarget, setOptimizeTarget] = useState("1");
         const [structType, setStructType] = useState("sop");
 
         const vs = useMemo(() => names.slice(0, nv), [names, nv]);
@@ -1050,6 +1056,11 @@
 
           if (mode === "km") {
             for (let i = 0; i < rows; i++) outs[i] = kmIn[i] ?? 0;
+          } else if (mode === "expr") {
+            for (let i = 0; i < rows; i++) {
+              const vals = d2b(i, nv).split("").map(Number);
+              outs[i] = evalExpr(expr, vals, vs);
+            }
           } else if (mode === "mt") {
             const mts = mtStr
               .split(/[\s,]+/)
@@ -1061,6 +1072,17 @@
               .filter((x) => !isNaN(x) && x >= 0 && x < rows);
             for (let i = 0; i < rows; i++)
               outs[i] = dcs.includes(i) ? "x" : mts.includes(i) ? 1 : 0;
+          } else if (mode === "mx") {
+            const mxs = mxStr
+              .split(/[\s,]+/)
+              .map(Number)
+              .filter((x) => !isNaN(x) && x >= 0 && x < rows);
+            const dcs = dcStr
+              .split(/[\s,]+/)
+              .map(Number)
+              .filter((x) => !isNaN(x) && x >= 0 && x < rows);
+            for (let i = 0; i < rows; i++)
+              outs[i] = dcs.includes(i) ? "x" : mxs.includes(i) ? 0 : 1;
           } else if (mode === "tt") {
             for (let i = 0; i < rows; i++) outs[i] = ttIn[i] ?? 0;
           }
@@ -1074,7 +1096,7 @@
             else dontC.push(i);
           });
           return { outs, mts, mxs, dontC };
-        }, [nv, mode, kmIn, mtStr, dcStr, ttIn]);
+        }, [nv, mode, kmIn, expr, mtStr, mxStr, dcStr, ttIn, vs]);
 
         const sopR = useMemo(
           () => runQMC(comp.mts, comp.dontC, nv),
@@ -1085,31 +1107,31 @@
           [comp.mxs, comp.dontC, nv],
         );
 
-        const activeQmc = optimizeTarget === "1" ? sopR : posR;
+        const gateCover = structType === "sop" ? sopR.cover : posR.cover;
 
         return React.createElement(
           "div",
-          { style: { maxWidth: 960, margin: "20px auto", padding: 16 } },
+          { style: { maxWidth: 1000, margin: "20px auto", padding: "0 16px" } },
           React.createElement(
             "div",
             {
               style: {
                 background: "#1e40af",
                 color: "white",
-                padding: 20,
-                borderRadius: 12,
+                padding: 16,
+                borderRadius: 8,
                 marginBottom: 16,
               },
             },
             React.createElement(
               "h2",
               { style: { margin: 0 } },
-              "Bool Kombajn — Poprawiony",
+              "Bool Kombajn — Pełna Kompletna Wersja",
             ),
             React.createElement(
               "p",
-              { style: { margin: "4px 0 0 0", fontSize: 12, opacity: 0.8 } },
-              "Poprawiono fuzję stanów Don't Care dla prawidłowego wyznaczania pętli i narożników.",
+              { style: { margin: "4px 0 0 0", fontSize: 12, opacity: 0.9 } },
+              "Naprawione Don't Care + Spisywanie Krok po Kroku + Schematy bramkowe",
             ),
           ),
 
@@ -1119,52 +1141,213 @@
               style: {
                 background: "white",
                 padding: 16,
-                borderRadius: 10,
+                borderRadius: 8,
+                border: "1px solid #cbd5e1",
                 marginBottom: 16,
-                boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
               },
             },
             React.createElement(
-              "label",
-              { style: { fontWeight: "bold", marginRight: 10 } },
-              "Liczba zmiennych: ",
+              "h3",
+              { style: { margin: "0 0 12px 0", fontSize: 15 } },
+              "1. Konfiguracja wejścia:",
             ),
             React.createElement(
-              "select",
+              "div",
               {
-                value: nv,
-                onChange: (e) => setNv(+e.target.value),
-                style: { padding: 6, borderRadius: 4 },
+                style: {
+                  display: "flex",
+                  gap: 20,
+                  marginBottom: 12,
+                  flexWrap: "wrap",
+                },
               },
-              [2, 3, 4, 5].map((x) =>
-                React.createElement("option", { key: x, value: x }, x),
+              React.createElement(
+                "label",
+                null,
+                "Zmienne: ",
+                React.createElement(
+                  "select",
+                  { value: nv, onChange: (e) => setNv(+e.target.value) },
+                  [2, 3, 4, 5, 6].map((x) =>
+                    React.createElement("option", { key: x, value: x }, x),
+                  ),
+                ),
+              ),
+              React.createElement(
+                "label",
+                null,
+                "Źródło: ",
+                React.createElement(
+                  "select",
+                  { value: mode, onChange: (e) => setMode(e.target.value) },
+                  React.createElement(
+                    "option",
+                    { value: "km" },
+                    "Mapa Karnaugh (Klikanie)",
+                  ),
+                  React.createElement(
+                    "option",
+                    { value: "expr" },
+                    "Wyrażenie logiczne",
+                  ),
+                  React.createElement(
+                    "option",
+                    { value: "mt" },
+                    "Mintermy (SOP)",
+                  ),
+                  React.createElement(
+                    "option",
+                    { value: "mx" },
+                    "Maxtermy (POS)",
+                  ),
+                  React.createElement(
+                    "option",
+                    { value: "tt" },
+                    "Tabela Prawdy",
+                  ),
+                ),
               ),
             ),
 
-            React.createElement(
-              "label",
-              {
-                style: { fontWeight: "bold", marginLeft: 20, marginRight: 10 },
+            mode === "expr" &&
+              React.createElement(
+                "div",
+                null,
+                React.createElement("input", {
+                  type: "text",
+                  placeholder: "np. x1 * x2 + !x3",
+                  value: expr,
+                  onChange: (e) => setExpr(e.target.value),
+                  style: { width: "100%", padding: 8, fontFamily: "monospace" },
+                }),
+              ),
+            mode === "mt" &&
+              React.createElement(
+                "div",
+                { style: { display: "flex", gap: 10 } },
+                React.createElement("input", {
+                  type: "text",
+                  placeholder: "Mintermy np. 1, 2, 4",
+                  value: mtStr,
+                  onChange: (e) => setMtStr(e.target.value),
+                  style: { flex: 1, padding: 6 },
+                }),
+                React.createElement("input", {
+                  type: "text",
+                  placeholder: "Don't care np. 0, 5",
+                  value: dcStr,
+                  onChange: (e) => setDcStr(e.target.value),
+                  style: { flex: 1, padding: 6 },
+                }),
+              ),
+            mode === "mx" &&
+              React.createElement(
+                "div",
+                { style: { display: "flex", gap: 10 } },
+                React.createElement("input", {
+                  type: "text",
+                  placeholder: "Maxtermy np. 0, 3",
+                  value: mxStr,
+                  onChange: (e) => setMxStr(e.target.value),
+                  style: { flex: 1, padding: 6 },
+                }),
+                React.createElement("input", {
+                  type: "text",
+                  placeholder: "Don't care np. 1, 2",
+                  value: dcStr,
+                  onChange: (e) => setDcStr(e.target.value),
+                  style: { flex: 1, padding: 6 },
+                }),
+              ),
+          ),
+
+          React.createElement(
+            "div",
+            {
+              style: {
+                display: "grid",
+                gridTemplateColumns: mode === "tt" ? "250px 1fr" : "1fr",
+                gap: 16,
+                marginBottom: 16,
               },
-              "Kryterium Mapy: ",
-            ),
+            },
+            mode === "tt" &&
+              React.createElement(
+                "div",
+                {
+                  style: {
+                    background: "white",
+                    padding: 12,
+                    borderRadius: 8,
+                    border: "1px solid #cbd5e1",
+                    maxHeight: 500,
+                    overflowY: "auto",
+                  },
+                },
+                React.createElement("strong", null, "Tabela prawdy:"),
+                Array.from({ length: 1 << nv }).map((_, i) =>
+                  React.createElement(
+                    "div",
+                    {
+                      key: i,
+                      style: {
+                        display: "flex",
+                        justifyContent: "space-between",
+                        margin: "4px 0",
+                        fontFamily: "monospace",
+                      },
+                    },
+                    React.createElement("span", null, `${i} (${d2b(i, nv)})`),
+                    React.createElement(
+                      "select",
+                      {
+                        value: ttIn[i] ?? 0,
+                        onChange: (e) =>
+                          setTtIn({
+                            ...ttIn,
+                            [i]: e.target.value === "x" ? "x" : +e.target.value,
+                          }),
+                      },
+                      React.createElement("option", { value: 0 }, "0"),
+                      React.createElement("option", { value: 1 }, "1"),
+                      React.createElement("option", { value: "x" }, "X"),
+                    ),
+                  ),
+                ),
+              ),
+
             React.createElement(
-              "select",
+              "div",
               {
-                value: optimizeTarget,
-                onChange: (e) => setOptimizeTarget(e.target.value),
-                style: { padding: 6, borderRadius: 4 },
+                style: {
+                  background: "white",
+                  padding: 16,
+                  borderRadius: 8,
+                  border: "1px solid #cbd5e1",
+                },
               },
               React.createElement(
-                "option",
-                { value: "1" },
-                "Grupuj jedynki (SOP)",
+                "strong",
+                null,
+                "2. Wizualizacja Mapy Karnaugh (Aktywne pętle dla SOP / POS podświetlają siatkę):",
               ),
-              React.createElement(
-                "option",
-                { value: "0" },
-                "Grupuj zera (POS)",
-              ),
+              React.createElement(KMap, {
+                n: nv,
+                vs: vs,
+                outs: comp.outs,
+                cover: structType === "sop" ? sopR.cover : posR.cover,
+                onCellClick: (m) =>
+                  setKmIn((p) => {
+                    const c = p[m] ?? 0;
+                    return { ...p, [m]: c === 0 ? 1 : c === 1 ? "x" : 0 };
+                  }),
+              }),
+
+              React.createElement(StepLogger, {
+                sopR: sopR,
+                posR: posR,
+                vs: vs,
+              }),
             ),
           ),
 
@@ -1173,28 +1356,63 @@
             {
               style: {
                 background: "white",
-                padding: 20,
-                borderRadius: 10,
+                padding: 16,
+                borderRadius: 8,
                 border: "1px solid #cbd5e1",
               },
             },
-            React.createElement(KMap, {
-              n: nv,
+            React.createElement(
+              "h3",
+              { style: { margin: "0 0 12px 0" } },
+              "3. Generowanie struktur i schematów logicznych",
+            ),
+            React.createElement(
+              "div",
+              { style: { display: "flex", gap: 16, marginBottom: 12 } },
+              React.createElement(
+                "label",
+                null,
+                "Typ struktur: ",
+                React.createElement(
+                  "select",
+                  {
+                    value: structType,
+                    onChange: (e) => setStructType(e.target.value),
+                  },
+                  React.createElement(
+                    "option",
+                    { value: "sop" },
+                    "SOP (Suma Iloczynów)",
+                  ),
+                  React.createElement(
+                    "option",
+                    { value: "pos" },
+                    "POS (Iloczyn Sum)",
+                  ),
+                ),
+              ),
+              React.createElement(
+                "label",
+                null,
+                "Bramki: ",
+                React.createElement(
+                  "select",
+                  { value: gtype, onChange: (e) => setGtype(e.target.value) },
+                  React.createElement(
+                    "option",
+                    { value: "and-or" },
+                    "Standard (AND-OR / OR-AND)",
+                  ),
+                  React.createElement("option", { value: "nand" }, "NAND"),
+                  React.createElement("option", { value: "nor" }, "NOR"),
+                ),
+              ),
+            ),
+            React.createElement(Gates, {
+              cover: gateCover,
               vs: vs,
-              outs: comp.outs,
-              cover: activeQmc.cover,
-              optimizeTarget: optimizeTarget,
-              onCellClick: (m) =>
-                setKmIn((p) => {
-                  const c = p[m] ?? 0;
-                  return { ...p, [m]: c === 0 ? 1 : c === 1 ? "x" : 0 };
-                }),
-            }),
-
-            React.createElement(ProcessLogger, {
-              qmcResult: activeQmc,
-              vs: vs,
-              optimizeTarget: optimizeTarget,
+              type: gtype,
+              structType: structType,
             }),
           ),
         );
