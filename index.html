@@ -168,7 +168,7 @@
       }
 
       // ═══════════════════════════════════════════════
-      // ALGORYTM QUINE'A-McCLUSKEYA (Z POPRAWKĄ DLA DON'T CARE)
+      // ALGORYTM QUINE'A-McCLUSKEYA (TYLKO ORAZ 0 I 1)
       // ═══════════════════════════════════════════════
 
       const d2b = (n, bits) => n.toString(2).padStart(bits, "0");
@@ -187,13 +187,12 @@
         return d === 1 ? a.slice(0, p) + "-" + a.slice(p + 1) : null;
       }
 
-      function runQMC(mts, dcs, n) {
+      function runQMC(mts, n) {
         if (!mts.length)
           return { pis: [], steps: [], essential: [], optional: [] };
-        const all = [...new Set([...mts, ...dcs])];
 
-        // NAPRAWA BUBEL: Każda komórka zachowuje swój indeks, aby don't care nie psuły fuzji i dużych grup
-        let tm = Object.fromEntries(all.map((m) => [d2b(m, n), [m]]));
+        // Brak dcs (stanów nieokreślonych) -> bazujemy czysto na zadanych mintermach/maxtermach
+        let tm = Object.fromEntries(mts.map((m) => [d2b(m, n), [m]]));
         let cur = Object.keys(tm);
         const pis = [],
           steps = [];
@@ -230,7 +229,7 @@
               pis.push({
                 term: t,
                 allCells: tm[t] || [],
-                mts: (tm[t] || []).filter((m) => mts.includes(m)),
+                mts: tm[t] || [],
               });
           });
           if (!any) break;
@@ -238,7 +237,7 @@
           cur = Object.keys(ntm);
         }
 
-        // KROK PO KROKU: Wyznaczanie grup niezbędnych i opcjonalnych do loggera
+        // Podział na Essential i Optional
         const covCount = {};
         mts.forEach((m) => {
           covCount[m] = [];
@@ -259,10 +258,7 @@
         essential.forEach((p) =>
           p.mts.forEach((m) => coveredByEssential.add(m)),
         );
-        const optional = pis.filter(
-          (_, i) =>
-            !essentialIndices.has(i) && pis[i].mts.some((m) => mts.includes(m)),
-        );
+        const optional = pis.filter((_, i) => !essentialIndices.has(i));
 
         return { pis, steps, essential, optional };
       }
@@ -360,14 +356,14 @@
       }
 
       const GRP_CLR = [
-        "#ef4444", // red
-        "#22c55e", // green
-        "#3b82f6", // blue
-        "#f59e0b", // amber
-        "#a855f7", // purple
-        "#06b6d4", // cyan
-        "#ec4899", // pink
-        "#14b8a6", // teal
+        "#ef4444",
+        "#22c55e",
+        "#3b82f6",
+        "#f59e0b",
+        "#a855f7",
+        "#06b6d4",
+        "#ec4899",
+        "#14b8a6",
       ];
       const GRP_BG = [
         "rgba(239, 68, 68, 0.15)",
@@ -394,7 +390,6 @@
         const colorMap = useMemo(() => {
           const m = {};
           cover.forEach((pi, i) => {
-            // Zmieniono na allCells aby poprawnie rysowało pętle obejmujące stany X
             (pi.allCells || []).forEach((cell) => {
               (m[cell] = m[cell] || []).push(i);
             });
@@ -516,7 +511,6 @@
 
                       let bg = "white";
                       if (val === 1) bg = "#f0fdf4";
-                      else if (val === "x" || val === "X") bg = "#faf5ff";
                       else bg = "#fff5f5";
 
                       let boxShadow = "none";
@@ -571,12 +565,7 @@
                             style: {
                               fontSize: 22,
                               fontWeight: 800,
-                              color:
-                                val === 1
-                                  ? "#16a34a"
-                                  : val === "x" || val === "X"
-                                    ? "#7c3aed"
-                                    : "#dc2626",
+                              color: val === 1 ? "#16a34a" : "#dc2626",
                             },
                           },
                           String(val),
@@ -677,10 +666,10 @@
                         style: {
                           paddingLeft: 20,
                           color: "#64748b",
-                          italic: "true",
+                          fontStyle: "italic",
                         },
                       },
-                      "Brak wyraźnych grup niezbędnych (pokrycie bezpośrednie).",
+                      "Brak wyróżnionych jednoznacznie grup niezbędnych (pokrywanie wielokrotne).",
                     ),
               ),
               /*#__PURE__*/ React.createElement(
@@ -1235,9 +1224,9 @@
         const [mode, setMode] = useState("km");
         const [expr, setExpr] = useState("");
         const [ttIn, setTtIn] = useState({});
-        // Wpisane z automatu Twoje dane z obrazka, aby od razu poprawnie przetestować pętlę narożników:
+        // Preset bez X:
         const [kmIn, setKmIn] = useState({
-          0: "x",
+          0: 1,
           1: 1,
           2: 1,
           4: 1,
@@ -1248,11 +1237,10 @@
         });
         const [mtStr, setMtStr] = useState("");
         const [mxStr, setMxStr] = useState("");
-        const [dcStr, setDcStr] = useState("");
         const [tab, setTab] = useState("tt");
 
         const [gtype, setGtype] = useState("and-or");
-        const [optimizeTarget, setOptimizeTarget] = useState("1"); // "1" -> SOP, "0" -> POS
+        const [optimizeTarget, setOptimizeTarget] = useState("1");
         const [structType, setStructType] = useState("sop");
 
         const vs = useMemo(() => names.slice(0, nv), [names, nv]);
@@ -1260,16 +1248,9 @@
         const comp = useMemo(() => {
           const rows = 1 << nv;
           const outs = Array(rows).fill(0);
-          const dcs = dcStr
-            .split(/[\s,]+/)
-            .map(Number)
-            .filter((x) => !isNaN(x) && x >= 0 && x < rows);
+
           if (mode === "expr" && expr.trim()) {
             for (let i = 0; i < rows; i++) {
-              if (dcs.includes(i)) {
-                outs[i] = "x";
-                continue;
-              }
               const vals = Array.from(
                 { length: nv },
                 (_, j) => (i >> (nv - 1 - j)) & 1,
@@ -1281,41 +1262,36 @@
               .split(/[\s,]+/)
               .map(Number)
               .filter((x) => !isNaN(x) && x >= 0 && x < rows);
-            for (let i = 0; i < rows; i++)
-              outs[i] = dcs.includes(i) ? "x" : mts.includes(i) ? 1 : 0;
+            for (let i = 0; i < rows; i++) outs[i] = mts.includes(i) ? 1 : 0;
           } else if (mode === "mx") {
             const mxs = mxStr
               .split(/[\s,]+/)
               .map(Number)
               .filter((x) => !isNaN(x) && x >= 0 && x < rows);
-            for (let i = 0; i < rows; i++)
-              outs[i] = dcs.includes(i) ? "x" : mxs.includes(i) ? 0 : 1;
+            for (let i = 0; i < rows; i++) outs[i] = mxs.includes(i) ? 0 : 1;
           } else if (mode === "tt") {
-            for (let i = 0; i < rows; i++)
-              outs[i] = dcs.includes(i) ? "x" : (ttIn[i] ?? 0);
+            for (let i = 0; i < rows; i++) outs[i] = ttIn[i] ?? 0;
           } else if (mode === "km") {
             for (let i = 0; i < rows; i++) outs[i] = kmIn[i] ?? 0;
           }
           const mts = [],
-            mxs = [],
-            dontC = [];
+            mxs = [];
           outs.forEach((v, i) => {
             if (v === 1) mts.push(i);
-            else if (v === 0) mxs.push(i);
-            else dontC.push(i);
+            else mxs.push(i);
           });
-          return { outs, mts, mxs, dontC };
-        }, [nv, vs, mode, expr, ttIn, kmIn, mtStr, mxStr, dcStr]);
+          return { outs, mts, mxs };
+        }, [nv, vs, mode, expr, ttIn, kmIn, mtStr, mxStr]);
 
         const sopR = useMemo(() => {
-          const r = runQMC(comp.mts, comp.dontC, nv);
+          const r = runQMC(comp.mts, nv);
           return { ...r, cover: findCover(r.pis, comp.mts) };
-        }, [comp.mts, comp.dontC, nv]);
+        }, [comp.mts, nv]);
 
         const posR = useMemo(() => {
-          const r = runQMC(comp.mxs, comp.dontC, nv);
+          const r = runQMC(comp.mxs, nv);
           return { ...r, cover: findCover(r.pis, comp.mxs) };
-        }, [comp.mxs, comp.dontC, nv]);
+        }, [comp.mxs, nv]);
 
         const minSOP =
           comp.mts.length === 0
@@ -1657,7 +1633,7 @@
                   onCellClick: (m) =>
                     setKmIn((p) => {
                       const c = p[m] ?? 0;
-                      return { ...p, [m]: c === 0 ? 1 : c === 1 ? "x" : 0 };
+                      return { ...p, [m]: c === 0 ? 1 : 0 };
                     }),
                 }),
                 /*#__PURE__*/ React.createElement(
@@ -1782,12 +1758,7 @@
                         {
                           key: i,
                           style: {
-                            background:
-                              out === 1
-                                ? "#f0fdf4"
-                                : out === "x" || out === "X"
-                                  ? "#faf5ff"
-                                  : "white",
+                            background: out === 1 ? "#f0fdf4" : "white",
                           },
                         },
                         /*#__PURE__*/ React.createElement(
@@ -1816,7 +1787,7 @@
                                 const c = p[i] ?? 0;
                                 return {
                                   ...p,
-                                  [i]: c === 0 ? 1 : c === 1 ? "x" : 0,
+                                  [i]: c === 0 ? 1 : 0,
                                 };
                               });
                             },
@@ -1888,7 +1859,7 @@
                   onCellClick: (m) => {
                     setKmIn((p) => {
                       const c = p[m] ?? 0;
-                      return { ...p, [m]: c === 0 ? 1 : c === 1 ? "x" : 0 };
+                      return { ...p, [m]: c === 0 ? 1 : 0 };
                     });
                   },
                 }),
